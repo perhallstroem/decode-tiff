@@ -11,7 +11,6 @@ extern crate weezl;
 
 mod bytecast;
 pub mod decoder;
-pub mod encoder;
 mod error;
 pub mod tags;
 
