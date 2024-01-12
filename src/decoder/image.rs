@@ -176,33 +176,10 @@ impl Image {
     let strip_decoder;
     let tile_attributes;
     match (
-      ifd.contains_key(&Tag::StripByteCounts),
-      ifd.contains_key(&Tag::StripOffsets),
       ifd.contains_key(&Tag::TileByteCounts),
       ifd.contains_key(&Tag::TileOffsets),
     ) {
-      (true, true, false, false) => {
-        chunk_type = ChunkType::Strip;
-
-        chunk_offsets = tag_reader.find_tag(Tag::StripOffsets)?.unwrap().into_u64_vec()?;
-        chunk_bytes = tag_reader.find_tag(Tag::StripByteCounts)?.unwrap().into_u64_vec()?;
-        let rows_per_strip = tag_reader
-          .find_tag(Tag::RowsPerStrip)?
-          .map(Value::into_u32)
-          .transpose()?
-          .unwrap_or(height);
-        strip_decoder = Some(StripDecodeState { rows_per_strip });
-        tile_attributes = None;
-
-        if chunk_offsets.len() != chunk_bytes.len()
-          || rows_per_strip == 0
-          || u32::try_from(chunk_offsets.len())?
-            != (height.saturating_sub(1) / rows_per_strip + 1) * planes as u32
-        {
-          return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
-        }
-      }
-      (false, false, true, true) => {
+      (true, true) => {
         chunk_type = ChunkType::Tile;
 
         let tile_width = usize::try_from(tag_reader.require_tag(Tag::TileWidth)?.into_u32()?)?;
@@ -231,7 +208,7 @@ impl Image {
           return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
         }
       }
-      (_, _, _, _) => return Err(TiffError::FormatError(TiffFormatError::StripTileTagConflict)),
+      (_, _) => return Err(TiffError::FormatError(TiffFormatError::RequiredTileInformationNotFound)),
     };
 
     Ok(Image {
@@ -348,10 +325,6 @@ impl Image {
 
   pub(crate) fn chunk_dimensions(&self) -> TiffResult<(u32, u32)> {
     match self.chunk_type {
-      ChunkType::Strip => {
-        let strip_attrs = self.strip_decoder.as_ref().unwrap();
-        Ok((self.width, strip_attrs.rows_per_strip))
-      }
       ChunkType::Tile => {
         let tile_attrs = self.tile_attributes.as_ref().unwrap();
         Ok((u32::try_from(tile_attrs.tile_width)?, u32::try_from(tile_attrs.tile_length)?))
@@ -363,19 +336,6 @@ impl Image {
     let dims = self.chunk_dimensions()?;
 
     match self.chunk_type {
-      ChunkType::Strip => {
-        let strip_attrs = self.strip_decoder.as_ref().unwrap();
-        let strips_per_band = self.height.saturating_sub(1) / strip_attrs.rows_per_strip + 1;
-        let strip_height_without_padding = (chunk_index % strips_per_band)
-          .checked_mul(dims.1)
-          .and_then(|x| self.height.checked_sub(x))
-          .ok_or(TiffError::UsageError(UsageError::InvalidChunkIndex(chunk_index)))?;
-
-        // Ignore potential vertical padding on the bottommost strip
-        let strip_height = dims.1.min(strip_height_without_padding);
-
-        Ok((dims.0, strip_height))
-      }
       ChunkType::Tile => {
         let tile_attrs = self.tile_attributes.as_ref().unwrap();
         let (padding_right, padding_down) = tile_attrs.get_padding(chunk_index as usize);

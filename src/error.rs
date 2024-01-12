@@ -57,7 +57,7 @@ pub enum TiffFormatError {
   SignedIntegerExpected(Value),
   Format(String),
   RequiredTagEmpty(Tag),
-  StripTileTagConflict,
+  RequiredTileInformationNotFound,
   CycleInOffsets,
   SamplesPerPixelIsZero,
 }
@@ -111,7 +111,7 @@ impl fmt::Display for TiffFormatError {
             }
             Format(ref val) => write!(fmt, "Invalid format: {:?}.", val),
             RequiredTagEmpty(ref val) => write!(fmt, "Required tag {:?} was empty.", val),
-            StripTileTagConflict => write!(fmt, "File should contain either (StripByteCounts and StripOffsets) or (TileByteCounts and TileOffsets), other combination was found."),
+            RequiredTileInformationNotFound => write!(fmt, "TIFF must be tiled"),
             CycleInOffsets => write!(fmt, "File contained a cycle in the list of IFDs"),
             SamplesPerPixelIsZero => write!(fmt, "Samples per pixel is zero"),
         }

@@ -241,7 +241,6 @@ impl<'a> DecodingBuffer<'a> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 /// Chunk type of the internal representation
 pub enum ChunkType {
-  Strip,
   Tile,
 }
 
@@ -557,7 +556,7 @@ impl<R: Read + Seek> Decoder<R> {
         photometric_interpretation: PhotometricInterpretation::BlackIsZero,
         compression_method: CompressionMethod::None,
         predictor: Predictor::None,
-        chunk_type: ChunkType::Strip,
+        chunk_type: ChunkType::Tile,
         planar_config: PlanarConfiguration::Chunky,
         strip_decoder: None,
         tile_attributes: None,
@@ -951,28 +950,6 @@ impl<R: Read + Seek> Decoder<R> {
   /// The chunk type (Strips / Tiles) of the image
   pub fn get_chunk_type(&self) -> ChunkType {
     self.image().chunk_type
-  }
-
-  /// Number of strips in image
-  pub fn strip_count(&mut self) -> TiffResult<u32> {
-    self.check_chunk_type(ChunkType::Strip)?;
-    let rows_per_strip = self.image().strip_decoder.as_ref().unwrap().rows_per_strip;
-
-    if rows_per_strip == 0 {
-      return Ok(0);
-    }
-
-    // rows_per_strip - 1 can never fail since we know it's at least 1
-    let height = match self.image().height.checked_add(rows_per_strip - 1) {
-      Some(h) => h,
-      None => return Err(TiffError::IntSizeError),
-    };
-
-    let strips = match self.image().planar_config {
-      PlanarConfiguration::Chunky => height / rows_per_strip,
-    };
-
-    Ok(strips)
   }
 
   /// Number of tiles in image
