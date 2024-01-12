@@ -1,5 +1,5 @@
 use super::ifd::{Directory, Value};
-use super::stream::{ByteOrder, DeflateReader, LZWReader, PackBitsReader};
+use super::stream::{ByteOrder, LZWReader};
 use super::tag_reader::TagReader;
 use super::{fp_predict_f32, fp_predict_f64, DecodingBuffer, Limits};
 use super::{stream::SmartReader, ChunkType};
@@ -202,7 +202,6 @@ impl Image {
 
         let planes = match planar_config {
             PlanarConfiguration::Chunky => 1,
-            PlanarConfiguration::Planar => samples,
         };
 
         let chunk_type;
@@ -375,10 +374,6 @@ impl Image {
             CompressionMethod::LZW => {
                 Box::new(LZWReader::new(reader, usize::try_from(compressed_length)?))
             }
-            CompressionMethod::PackBits => Box::new(PackBitsReader::new(reader, compressed_length)),
-            CompressionMethod::Deflate | CompressionMethod::OldDeflate => {
-                Box::new(DeflateReader::new(reader))
-            }
             CompressionMethod::ModernJPEG => {
                 if jpeg_tables.is_some() && compressed_length < 2 {
                     return Err(TiffError::FormatError(
@@ -461,7 +456,6 @@ impl Image {
     pub(crate) fn samples_per_pixel(&self) -> usize {
         match self.planar_config {
             PlanarConfiguration::Chunky => self.samples.into(),
-            PlanarConfiguration::Planar => 1,
         }
     }
 
@@ -469,7 +463,6 @@ impl Image {
     pub(crate) fn strips_per_pixel(&self) -> usize {
         match self.planar_config {
             PlanarConfiguration::Chunky => 1,
-            PlanarConfiguration::Planar => self.samples.into(),
         }
     }
 

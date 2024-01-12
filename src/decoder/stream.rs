@@ -122,12 +122,6 @@ pub trait EndianReader: Read {
 ///
 
 ///
-/// ## Deflate Reader
-///
-
-pub type DeflateReader<R> = flate2::read::ZlibDecoder<R>;
-
-///
 /// ## LZW Reader
 ///
 
@@ -179,77 +173,6 @@ impl<R: Read> Read for LZWReader<R> {
                 Err(err) => return Err(io::Error::new(io::ErrorKind::InvalidData, err)),
             }
         }
-    }
-}
-
-///
-/// ## PackBits Reader
-///
-
-enum PackBitsReaderState {
-    Header,
-    Literal,
-    Repeat { value: u8 },
-}
-
-/// Reader that unpacks Apple's `PackBits` format
-pub struct PackBitsReader<R: Read> {
-    reader: Take<R>,
-    state: PackBitsReaderState,
-    count: usize,
-}
-
-impl<R: Read> PackBitsReader<R> {
-    /// Wraps a reader
-    pub fn new(reader: R, length: u64) -> Self {
-        Self {
-            reader: reader.take(length),
-            state: PackBitsReaderState::Header,
-            count: 0,
-        }
-    }
-}
-
-impl<R: Read> Read for PackBitsReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        while let PackBitsReaderState::Header = self.state {
-            if self.reader.limit() == 0 {
-                return Ok(0);
-            }
-            let mut header: [u8; 1] = [0];
-            self.reader.read_exact(&mut header)?;
-            let h = header[0] as i8;
-            if (-127..=-1).contains(&h) {
-                let mut data: [u8; 1] = [0];
-                self.reader.read_exact(&mut data)?;
-                self.state = PackBitsReaderState::Repeat { value: data[0] };
-                self.count = (1 - h as isize) as usize;
-            } else if h >= 0 {
-                self.state = PackBitsReaderState::Literal;
-                self.count = h as usize + 1;
-            } else {
-                // h = -128 is a no-op.
-            }
-        }
-
-        let length = buf.len().min(self.count);
-        let actual = match self.state {
-            PackBitsReaderState::Literal => self.reader.read(&mut buf[..length])?,
-            PackBitsReaderState::Repeat { value } => {
-                for b in &mut buf[..length] {
-                    *b = value;
-                }
-
-                length
-            }
-            PackBitsReaderState::Header => unreachable!(),
-        };
-
-        self.count -= actual;
-        if self.count == 0 {
-            self.state = PackBitsReaderState::Header;
-        }
-        Ok(actual)
     }
 }
 
@@ -306,31 +229,5 @@ impl<R: Read + Seek> Seek for SmartReader<R> {
     #[inline]
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         self.reader.seek(pos)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_packbits() {
-        let encoded = vec![
-            0xFE, 0xAA, 0x02, 0x80, 0x00, 0x2A, 0xFD, 0xAA, 0x03, 0x80, 0x00, 0x2A, 0x22, 0xF7,
-            0xAA,
-        ];
-        let encoded_len = encoded.len();
-
-        let buff = io::Cursor::new(encoded);
-        let mut decoder = PackBitsReader::new(buff, encoded_len as u64);
-
-        let mut decoded = Vec::new();
-        decoder.read_to_end(&mut decoded).unwrap();
-
-        let expected = vec![
-            0xAA, 0xAA, 0xAA, 0x80, 0x00, 0x2A, 0xAA, 0xAA, 0xAA, 0xAA, 0x80, 0x00, 0x2A, 0x22,
-            0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
-        ];
-        assert_eq!(decoded, expected);
     }
 }

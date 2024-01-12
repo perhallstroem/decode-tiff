@@ -433,44 +433,34 @@ fn fix_endianness_and_predict(
     }
 }
 
-fn invert_colors_unsigned<T>(buffer: &mut [T], max: T)
+fn buffer_subtract<T>(buffer: &mut [T], max: T)
 where
     T: std::ops::Sub<T> + std::ops::Sub<Output = T> + Copy,
 {
     for datum in buffer.iter_mut() {
-        *datum = max - *datum
-    }
-}
-
-fn invert_colors_fp<T>(buffer: &mut [T], max: T)
-where
-    T: std::ops::Sub<T> + std::ops::Sub<Output = T> + Copy,
-{
-    for datum in buffer.iter_mut() {
-        // FIXME: assumes [0, 1) range for floats
         *datum = max - *datum
     }
 }
 
 fn invert_colors(buf: &mut DecodingBuffer, color_type: ColorType) {
     match (color_type, buf) {
-        (ColorType::Gray(64), DecodingBuffer::U64(ref mut buffer)) => {
-            invert_colors_unsigned(buffer, 0xffff_ffff_ffff_ffff);
+        (ColorType::Gray(64), DecodingBuffer::U64(buffer)) => {
+            buffer_subtract(buffer, 0xffff_ffff_ffff_ffff);
         }
-        (ColorType::Gray(32), DecodingBuffer::U32(ref mut buffer)) => {
-            invert_colors_unsigned(buffer, 0xffff_ffff);
+        (ColorType::Gray(32), DecodingBuffer::U32(buffer)) => {
+            buffer_subtract(buffer, 0xffff_ffff);
         }
-        (ColorType::Gray(16), DecodingBuffer::U16(ref mut buffer)) => {
-            invert_colors_unsigned(buffer, 0xffff);
+        (ColorType::Gray(16), DecodingBuffer::U16(buffer)) => {
+            buffer_subtract(buffer, 0xffff);
         }
-        (ColorType::Gray(n), DecodingBuffer::U8(ref mut buffer)) if n <= 8 => {
-            invert_colors_unsigned(buffer, 0xff);
+        (ColorType::Gray(n), DecodingBuffer::U8(buffer)) if n <= 8 => {
+            buffer_subtract(buffer, 0xff);
         }
-        (ColorType::Gray(32), DecodingBuffer::F32(ref mut buffer)) => {
-            invert_colors_fp(buffer, 1.0);
+        (ColorType::Gray(32), DecodingBuffer::F32(buffer)) => {
+            buffer_subtract(buffer, 1.0);
         }
-        (ColorType::Gray(64), DecodingBuffer::F64(ref mut buffer)) => {
-            invert_colors_fp(buffer, 1.0);
+        (ColorType::Gray(64), DecodingBuffer::F64(buffer)) => {
+            buffer_subtract(buffer, 1.0);
         }
         _ => {}
     }
@@ -1020,7 +1010,6 @@ impl<R: Read + Seek> Decoder<R> {
 
         let strips = match self.image().planar_config {
             PlanarConfiguration::Chunky => height / rows_per_strip,
-            PlanarConfiguration::Planar => height / rows_per_strip * self.image().samples as u32,
         };
 
         Ok(strips)

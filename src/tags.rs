@@ -181,9 +181,6 @@ pub enum CompressionMethod(u16) unknown("A custom compression method") {
     JPEG = 6,
     // "Extended JPEG" or "new JPEG" style
     ModernJPEG = 7,
-    Deflate = 8,
-    OldDeflate = 0x80B2,
-    PackBits = 0x8005,
 }
 }
 
@@ -203,7 +200,6 @@ pub enum PhotometricInterpretation(u16) {
 tags! {
 pub enum PlanarConfiguration(u16) {
     Chunky = 1,
-    Planar = 2,
 }
 }
 

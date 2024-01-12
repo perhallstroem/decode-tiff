@@ -6,7 +6,6 @@
 //! # Related Links
 //! * <https://web.archive.org/web/20210108073850/https://www.adobe.io/open/standards/TIFF.html> - The TIFF specification
 
-extern crate jpeg;
 extern crate weezl;
 
 mod bytecast;
@@ -15,6 +14,11 @@ mod error;
 pub mod tags;
 
 pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
+use crate::decoder::ifd::Value;
+use crate::decoder::{ChunkType, Decoder, DecodingResult};
+use crate::tags::Tag;
+use std::fs::File;
+use std::path::PathBuf;
 
 /// An enumeration over supported color types and their bit depths
 #[derive(Copy, PartialEq, Eq, Debug, Clone, Hash)]

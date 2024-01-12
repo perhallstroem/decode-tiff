@@ -1,3 +1,4 @@
+use jpeg::UnsupportedFeature;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Display;
@@ -5,8 +6,6 @@ use std::io;
 use std::str;
 use std::string;
 use std::sync::Arc;
-
-use jpeg::UnsupportedFeature;
 
 use crate::decoder::{ifd::Value, ChunkType};
 use crate::tags::{
