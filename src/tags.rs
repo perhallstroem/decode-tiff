@@ -118,8 +118,6 @@ pub enum Tag(u16) unknown("A private or extension tag") {
     SampleFormat = 339,
     SMinSampleValue = 340, // TODO add support
     SMaxSampleValue = 341, // TODO add support
-    // JPEG
-    JPEGTables = 347,
     // GeoTIFF
     ModelPixelScaleTag = 33550, // (SoftDesk)
     ModelTransformationTag = 34264, // (JPL Carto Group)
@@ -178,9 +176,6 @@ pub enum CompressionMethod(u16) unknown("A custom compression method") {
     Fax3 = 3,
     Fax4 = 4,
     LZW = 5,
-    JPEG = 6,
-    // "Extended JPEG" or "new JPEG" style
-    ModernJPEG = 7,
 }
 }
 

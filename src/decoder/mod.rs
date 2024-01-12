@@ -556,7 +556,6 @@ impl<R: Read + Seek> Decoder<R> {
         sample_format: vec![SampleFormat::Uint],
         photometric_interpretation: PhotometricInterpretation::BlackIsZero,
         compression_method: CompressionMethod::None,
-        jpeg_tables: None,
         predictor: Predictor::None,
         chunk_type: ChunkType::Strip,
         planar_config: PlanarConfiguration::Chunky,

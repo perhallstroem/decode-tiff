@@ -74,7 +74,6 @@ pub(crate) struct Image {
   pub photometric_interpretation: PhotometricInterpretation,
   pub compression_method: CompressionMethod,
   pub predictor: Predictor,
-  pub jpeg_tables: Option<Arc<Vec<u8>>>,
   pub chunk_type: ChunkType,
   pub planar_config: PlanarConfiguration,
   pub strip_decoder: Option<StripDecodeState>,
@@ -110,18 +109,6 @@ impl Image {
       None => CompressionMethod::None,
     };
 
-    let jpeg_tables = if compression_method == CompressionMethod::ModernJPEG
-      && ifd.contains_key(&Tag::JPEGTables)
-    {
-      let vec = tag_reader.find_tag(Tag::JPEGTables)?.unwrap().into_u8_vec()?;
-      if vec.len() < 2 {
-        return Err(TiffError::FormatError(TiffFormatError::InvalidTagValueType(Tag::JPEGTables)));
-      }
-
-      Some(Arc::new(vec))
-    } else {
-      None
-    };
 
     let samples: u16 =
       tag_reader.find_tag(Tag::SamplesPerPixel)?.map(Value::into_u16).transpose()?.unwrap_or(1);
@@ -256,7 +243,6 @@ impl Image {
       sample_format,
       photometric_interpretation,
       compression_method,
-      jpeg_tables,
       predictor,
       chunk_type,
       planar_config,
@@ -311,74 +297,12 @@ impl Image {
   }
 
   fn create_reader<'r, R: 'r + Read>(
-    reader: R, photometric_interpretation: PhotometricInterpretation,
-    compression_method: CompressionMethod, compressed_length: u64, jpeg_tables: Option<&[u8]>,
+    reader: R,    compression_method: CompressionMethod, compressed_length: u64,
   ) -> TiffResult<Box<dyn Read + 'r>> {
     Ok(match compression_method {
       CompressionMethod::None => Box::new(reader),
       CompressionMethod::LZW => {
         Box::new(LZWReader::new(reader, usize::try_from(compressed_length)?))
-      }
-      CompressionMethod::ModernJPEG => {
-        if jpeg_tables.is_some() && compressed_length < 2 {
-          return Err(TiffError::FormatError(TiffFormatError::InvalidTagValueType(
-            Tag::JPEGTables,
-          )));
-        }
-
-        // Construct new jpeg_reader wrapping a SmartReader.
-        //
-        // JPEG compression in TIFF allows saving quantization and/or huffman tables in one
-        // central location. These `jpeg_tables` are simply prepended to the remaining jpeg image
-        // data. Because these `jpeg_tables` start with a `SOI` (HEX: `0xFFD8`) or __start
-        // of image__ marker which is also at the beginning of the remaining JPEG image data
-        // and would confuse the JPEG renderer, one of these has to be taken off. In this
-        // case the first two bytes of the remaining JPEG data is removed because it follows
-        // `jpeg_tables`. Similary, `jpeg_tables` ends with a `EOI` (HEX: `0xFFD9`) or __end
-        // of image__ marker, this has to be removed as well (last two bytes of
-        // `jpeg_tables`).
-        let jpeg_reader = match jpeg_tables {
-          Some(jpeg_tables) => {
-            let mut reader = reader.take(compressed_length);
-            reader.read_exact(&mut [0; 2])?;
-
-            Box::new(
-              Cursor::new(&jpeg_tables[..jpeg_tables.len() - 2])
-                .chain(reader.take(compressed_length)),
-            ) as Box<dyn Read>
-          }
-          None => Box::new(reader.take(compressed_length)),
-        };
-
-        let mut decoder = jpeg::Decoder::new(jpeg_reader);
-
-        match photometric_interpretation {
-          PhotometricInterpretation::RGB => decoder.set_color_transform(jpeg::ColorTransform::RGB),
-          PhotometricInterpretation::WhiteIsZero => {
-            decoder.set_color_transform(jpeg::ColorTransform::None)
-          }
-          PhotometricInterpretation::BlackIsZero => {
-            decoder.set_color_transform(jpeg::ColorTransform::None)
-          }
-          PhotometricInterpretation::TransparencyMask => {
-            decoder.set_color_transform(jpeg::ColorTransform::None)
-          }
-          PhotometricInterpretation::CMYK => {
-            decoder.set_color_transform(jpeg::ColorTransform::CMYK)
-          }
-          PhotometricInterpretation::YCbCr => {
-            decoder.set_color_transform(jpeg::ColorTransform::YCbCr)
-          }
-          photometric_interpretation => {
-            return Err(TiffError::UnsupportedError(
-              TiffUnsupportedError::UnsupportedInterpretation(photometric_interpretation),
-            ));
-          }
-        }
-
-        let data = decoder.decode()?;
-
-        Box::new(Cursor::new(data))
       }
       method => {
         return Err(TiffError::UnsupportedError(
@@ -534,10 +458,8 @@ impl Image {
 
     let mut reader = Self::create_reader(
       reader,
-      photometric_interpretation,
       compression_method,
       *compressed_bytes,
-      self.jpeg_tables.as_deref().map(|a| &**a),
     )?;
 
     if output_width == data_dims.0 as usize && padding_right == 0 {
