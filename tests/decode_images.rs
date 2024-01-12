@@ -11,11 +11,10 @@ const TEST_IMAGE_DIR: &str = "./tests/images/";
 
 macro_rules! test_image_sum {
   ($name:ident, $buffer:ident, $sum_ty:ty) => {
-    fn $name(file: &str, expected_type: ColorType, expected_sum: $sum_ty) {
+    fn $name(file: &str, expected_sum: $sum_ty) {
       let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
       let img_file = File::open(path).expect("Cannot find test image!");
       let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-      assert_eq!(decoder.colortype().unwrap(), expected_type);
       let img_res = decoder.read_image().unwrap();
 
       match img_res {
@@ -38,39 +37,24 @@ test_image_sum!(test_image_sum_u64, U64, u64);
 test_image_sum!(test_image_sum_f32, F32, f32);
 test_image_sum!(test_image_sum_f64, F64, f64);
 
-/// Tests that a decoder can be constructed for an image and the color type
-/// read from the IFD and is of the appropriate type, but the type is
-/// unsupported.
-fn test_image_color_type_unsupported(file: &str, expected_type: ColorType) {
-  let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
-  let img_file = File::open(path).expect("Cannot find test image!");
-  let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-  assert_eq!(decoder.colortype().unwrap(), expected_type);
-  assert!(match decoder.read_image() {
-    Err(tiff::TiffError::UnsupportedError(tiff::TiffUnsupportedError::UnsupportedColorType(_))) =>
-      true,
-    _ => false,
-  });
-}
-
 #[test]
 fn test_tiled_rgb_u8() {
-  test_image_sum_u8("tiled-rgb-u8.tif", ColorType::RGB(8), 39528948);
+  test_image_sum_u8("tiled-rgb-u8.tif", 39528948);
 }
 
 #[test]
 fn test_tiled_rect_rgb_u8() {
-  test_image_sum_u8("tiled-rect-rgb-u8.tif", ColorType::RGB(8), 62081032);
+  test_image_sum_u8("tiled-rect-rgb-u8.tif", 62081032);
 }
 
 #[test]
 fn test_tiled_oversize_gray_i8() {
-  test_image_sum_i8("tiled-oversize-gray-i8.tif", ColorType::Gray(8), 1214996);
+  test_image_sum_i8("tiled-oversize-gray-i8.tif", 1214996);
 }
 
 #[test]
 fn test_tiled_cmyk_i8() {
-  test_image_sum_i8("tiled-cmyk-i8.tif", ColorType::CMYK(8), 1759101);
+  test_image_sum_i8("tiled-cmyk-i8.tif", 1759101);
 }
 
 #[test]
@@ -99,7 +83,6 @@ fn test_tiled_incremental() {
   let path = PathBuf::from(TEST_IMAGE_DIR).join(file);
   let img_file = File::open(path).expect("Cannot find test image!");
   let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-  assert_eq!(decoder.colortype().unwrap(), expected_type);
 
   let tiles = decoder.tile_count().unwrap();
   assert_eq!(tiles as usize, sums.len());
@@ -261,4 +244,3 @@ fn timeout() {
     e => panic!("Unexpected error {:?}", e),
   }
 }
-

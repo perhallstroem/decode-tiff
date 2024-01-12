@@ -9,18 +9,20 @@
 
 extern crate weezl;
 
+#[cfg(test)]
+use std::{fs::File, path::PathBuf};
+
+pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
+#[cfg(test)]
+use crate::{
+  decoder::{ifd::Value, Decoder, DecodingResult},
+  tags::Tag,
+};
+
 mod bytecast;
 pub mod decoder;
 mod error;
 pub mod tags;
-
-use std::{fs::File, path::PathBuf};
-
-pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
-use crate::{
-  decoder::{ifd::Value, ChunkType, Decoder, DecodingResult},
-  tags::Tag,
-};
 
 /// An enumeration over supported color types and their bit depths
 #[derive(Copy, PartialEq, Eq, Debug, Clone, Hash)]
@@ -56,10 +58,6 @@ fn example() {
   let img_file = File::open(path).expect("Cannot find test image!");
   let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
   assert_eq!(decoder.dimensions().expect("Cannot get dimensions"), (490, 367));
-  assert_eq!(decoder.colortype().expect("Cannot get colortype"), ColorType::RGB(8));
-
-  let ct = decoder.get_chunk_type();
-  assert_eq!(ChunkType::Tile, ct);
 
   let tile_count = decoder.tile_count().unwrap();
   assert_eq!(48, tile_count);
@@ -89,10 +87,6 @@ fn example2() {
 
   let dim = decoder.dimensions().unwrap();
   eprintln!("dimensions: {dim:?}");
-
-  let ct = decoder.get_chunk_type();
-
-  eprintln!("ct: {ct:?}");
 
   let tiles = decoder.tile_count().unwrap();
 
@@ -130,10 +124,6 @@ fn example3() {
 
   let dim = decoder.dimensions().unwrap();
   eprintln!("dimensions: {dim:?}");
-
-  let ct = decoder.get_chunk_type();
-
-  eprintln!("ct: {ct:?}");
 
   let tiles = decoder.tile_count().unwrap();
 

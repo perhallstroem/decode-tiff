@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, fmt::Display, io, str, string, sync::Arc};
+use std::{error::Error, fmt, io, str, string};
 
 use crate::{
   decoder::{ifd::Value, ChunkType},
@@ -66,55 +66,49 @@ impl fmt::Display for TiffFormatError {
   fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
     use self::TiffFormatError::*;
     match *self {
-            TiffSignatureNotFound => write!(fmt, "TIFF signature not found."),
-            TiffSignatureInvalid => write!(fmt, "TIFF signature invalid."),
-            ImageFileDirectoryNotFound => write!(fmt, "Image file directory not found."),
-            InconsistentSizesEncountered => write!(fmt, "Inconsistent sizes encountered."),
-            UnexpectedCompressedData {
-                actual_bytes,
-                required_bytes,
-            } => {
-                write!(
-                    fmt,
-                    "Decompression returned different amount of bytes than expected: got {}, expected {}.",
-                    actual_bytes, required_bytes
-                )
-            }
-            InconsistentStripSamples {
-                actual_samples,
-                required_samples,
-            } => {
-                write!(
-                    fmt,
-                    "Inconsistent elements in strip: got {}, expected {}.",
-                    actual_samples, required_samples
-                )
-            }
-            InvalidDimensions(width, height) => write!(fmt, "Invalid dimensions: {}x{}.", width, height),
-            InvalidTag => write!(fmt, "Image contains invalid tag."),
-            InvalidTagValueType(ref tag) => {
-                write!(fmt, "Tag `{:?}` did not have the expected value type.", tag)
-            }
-            RequiredTagNotFound(ref tag) => write!(fmt, "Required tag `{:?}` not found.", tag),
-            UnknownPredictor(ref predictor) => {
-                write!(fmt, "Unknown predictor “{}” encountered", predictor)
-            }
-            UnknownPlanarConfiguration(ref planar_config) =>  {
-                write!(fmt, "Unknown planar configuration “{}” encountered", planar_config)
-            }
-            ByteExpected(ref val) => write!(fmt, "Expected byte, {:?} found.", val),
-            UnsignedIntegerExpected(ref val) => {
-                write!(fmt, "Expected unsigned integer, {:?} found.", val)
-            }
-            SignedIntegerExpected(ref val) => {
-                write!(fmt, "Expected signed integer, {:?} found.", val)
-            }
-            Format(ref val) => write!(fmt, "Invalid format: {:?}.", val),
-            RequiredTagEmpty(ref val) => write!(fmt, "Required tag {:?} was empty.", val),
-            RequiredTileInformationNotFound => write!(fmt, "TIFF must be tiled"),
-            CycleInOffsets => write!(fmt, "File contained a cycle in the list of IFDs"),
-            SamplesPerPixelIsZero => write!(fmt, "Samples per pixel is zero"),
-        }
+      TiffSignatureNotFound => write!(fmt, "TIFF signature not found."),
+      TiffSignatureInvalid => write!(fmt, "TIFF signature invalid."),
+      ImageFileDirectoryNotFound => write!(fmt, "Image file directory not found."),
+      InconsistentSizesEncountered => write!(fmt, "Inconsistent sizes encountered."),
+      UnexpectedCompressedData { actual_bytes, required_bytes } => {
+        write!(
+          fmt,
+          "Decompression returned different amount of bytes than expected: got {}, expected {}.",
+          actual_bytes, required_bytes
+        )
+      }
+      InconsistentStripSamples { actual_samples, required_samples } => {
+        write!(
+          fmt,
+          "Inconsistent elements in strip: got {}, expected {}.",
+          actual_samples, required_samples
+        )
+      }
+      InvalidDimensions(width, height) => write!(fmt, "Invalid dimensions: {}x{}.", width, height),
+      InvalidTag => write!(fmt, "Image contains invalid tag."),
+      InvalidTagValueType(ref tag) => {
+        write!(fmt, "Tag `{:?}` did not have the expected value type.", tag)
+      }
+      RequiredTagNotFound(ref tag) => write!(fmt, "Required tag `{:?}` not found.", tag),
+      UnknownPredictor(ref predictor) => {
+        write!(fmt, "Unknown predictor “{}” encountered", predictor)
+      }
+      UnknownPlanarConfiguration(ref planar_config) => {
+        write!(fmt, "Unknown planar configuration “{}” encountered", planar_config)
+      }
+      ByteExpected(ref val) => write!(fmt, "Expected byte, {:?} found.", val),
+      UnsignedIntegerExpected(ref val) => {
+        write!(fmt, "Expected unsigned integer, {:?} found.", val)
+      }
+      SignedIntegerExpected(ref val) => {
+        write!(fmt, "Expected signed integer, {:?} found.", val)
+      }
+      Format(ref val) => write!(fmt, "Invalid format: {:?}.", val),
+      RequiredTagEmpty(ref val) => write!(fmt, "Required tag {:?} was empty.", val),
+      RequiredTileInformationNotFound => write!(fmt, "TIFF must be tiled"),
+      CycleInOffsets => write!(fmt, "File contained a cycle in the list of IFDs"),
+      SamplesPerPixelIsZero => write!(fmt, "Samples per pixel is zero"),
+    }
   }
 }
 

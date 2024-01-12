@@ -1,9 +1,5 @@
 extern crate tiff;
 
-use std::{fs::File, path::PathBuf};
-
-use tiff::{decoder::Decoder, tags::Tag, ColorType};
-
 const TEST_IMAGE_DIR: &str = "./tests/images/bigtiff";
 
 #[test]

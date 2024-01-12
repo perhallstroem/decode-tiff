@@ -1,27 +1,23 @@
 use std::{
   convert::TryFrom,
-  io::{self, Cursor, Read, Seek},
-  sync::Arc,
+  io::{self, Read, Seek},
 };
+
+use log::trace;
 
 use super::{
   fp_predict_f32, fp_predict_f64,
   ifd::{Directory, Value},
   stream::{ByteOrder, LZWReader, SmartReader},
   tag_reader::TagReader,
-  ChunkType, DecodingBuffer, Limits,
+  DecodingBuffer, Limits,
 };
 use crate::{
   tags::{
     CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat, Tag,
   },
-  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError,
+  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
-
-#[derive(Debug)]
-pub(crate) struct StripDecodeState {
-  pub rows_per_strip: u32,
-}
 
 #[derive(Debug)]
 /// Computed values useful for tile decoding
@@ -74,9 +70,6 @@ pub(crate) struct Image {
   pub photometric_interpretation: PhotometricInterpretation,
   pub compression_method: CompressionMethod,
   pub predictor: Predictor,
-  pub chunk_type: ChunkType,
-  pub planar_config: PlanarConfiguration,
-  pub strip_decoder: Option<StripDecodeState>,
   pub tile_attributes: Option<TileAttributes>,
   pub chunk_offsets: Vec<u64>,
   pub chunk_bytes: Vec<u64>,
@@ -109,7 +102,6 @@ impl Image {
       None => CompressionMethod::None,
     };
 
-
     let samples: u16 =
       tag_reader.find_tag(Tag::SamplesPerPixel)?.map(Value::into_u16).transpose()?.unwrap_or(1);
     if samples == 0 {
@@ -120,6 +112,8 @@ impl Image {
       Some(vals) => {
         let sample_format: Vec<_> =
           vals.into_iter().map(SampleFormat::from_u16_exhaustive).collect();
+
+        eprintln!("SAMPLE FORMATS: {:?}", sample_format);
 
         // TODO: for now, only homogenous formats across samples are supported.
         if !sample_format.windows(2).all(|s| s[0] == s[1]) {
@@ -134,9 +128,9 @@ impl Image {
     let bits_per_sample: Vec<u8> =
       tag_reader.find_tag_uint_vec(Tag::BitsPerSample)?.unwrap_or_else(|| vec![1]);
 
-    // Technically bits_per_sample.len() should be *equal* to samples, but libtiff also allows
-    // it to be a single value that applies to all samples.
-    if bits_per_sample.len() != samples.into() && bits_per_sample.len() != 1 {
+    eprintln!("BITS PER SAMPLE: {bits_per_sample:?}");
+
+    if bits_per_sample.len() != samples.into() {
       return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
     }
 
@@ -170,18 +164,11 @@ impl Image {
       PlanarConfiguration::Chunky => 1,
     };
 
-    let chunk_type;
     let chunk_offsets;
     let chunk_bytes;
-    let strip_decoder;
     let tile_attributes;
-    match (
-      ifd.contains_key(&Tag::TileByteCounts),
-      ifd.contains_key(&Tag::TileOffsets),
-    ) {
+    match (ifd.contains_key(&Tag::TileByteCounts), ifd.contains_key(&Tag::TileOffsets)) {
       (true, true) => {
-        chunk_type = ChunkType::Tile;
-
         let tile_width = usize::try_from(tag_reader.require_tag(Tag::TileWidth)?.into_u32()?)?;
         let tile_length = usize::try_from(tag_reader.require_tag(Tag::TileLength)?.into_u32()?)?;
 
@@ -191,7 +178,6 @@ impl Image {
           return Err(TiffFormatError::InvalidTagValueType(Tag::TileLength).into());
         }
 
-        strip_decoder = None;
         tile_attributes = Some(TileAttributes {
           image_width: usize::try_from(width)?,
           image_height: usize::try_from(height)?,
@@ -208,7 +194,9 @@ impl Image {
           return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
         }
       }
-      (_, _) => return Err(TiffError::FormatError(TiffFormatError::RequiredTileInformationNotFound)),
+      (_, _) => {
+        return Err(TiffError::FormatError(TiffFormatError::RequiredTileInformationNotFound))
+      }
     };
 
     Ok(Image {
@@ -221,9 +209,6 @@ impl Image {
       photometric_interpretation,
       compression_method,
       predictor,
-      chunk_type,
-      planar_config,
-      strip_decoder,
       tile_attributes,
       chunk_offsets,
       chunk_bytes,
@@ -274,7 +259,7 @@ impl Image {
   }
 
   fn create_reader<'r, R: 'r + Read>(
-    reader: R,    compression_method: CompressionMethod, compressed_length: u64,
+    reader: R, compression_method: CompressionMethod, compressed_length: u64,
   ) -> TiffResult<Box<dyn Read + 'r>> {
     Ok(match compression_method {
       CompressionMethod::None => Box::new(reader),
@@ -297,16 +282,7 @@ impl Image {
   /// * `PlanarConfiguration::Chunky` -> 3 (RGBRGBRGB...)
   /// * `PlanarConfiguration::Planar` -> 1 (RRR...) (GGG...) (BBB...)
   pub(crate) fn samples_per_pixel(&self) -> usize {
-    match self.planar_config {
-      PlanarConfiguration::Chunky => self.samples.into(),
-    }
-  }
-
-  /// Number of strips per pixel.
-  pub(crate) fn strips_per_pixel(&self) -> usize {
-    match self.planar_config {
-      PlanarConfiguration::Chunky => 1,
-    }
+    self.samples.into()
   }
 
   pub(crate) fn chunk_file_range(&self, chunk: u32) -> TiffResult<(u64, u64)> {
@@ -324,28 +300,18 @@ impl Image {
   }
 
   pub(crate) fn chunk_dimensions(&self) -> TiffResult<(u32, u32)> {
-    match self.chunk_type {
-      ChunkType::Tile => {
-        let tile_attrs = self.tile_attributes.as_ref().unwrap();
-        Ok((u32::try_from(tile_attrs.tile_width)?, u32::try_from(tile_attrs.tile_length)?))
-      }
-    }
+    let tile_attrs = self.tile_attributes.as_ref().unwrap();
+    Ok((u32::try_from(tile_attrs.tile_width)?, u32::try_from(tile_attrs.tile_length)?))
   }
 
   pub(crate) fn chunk_data_dimensions(&self, chunk_index: u32) -> TiffResult<(u32, u32)> {
-    let dims = self.chunk_dimensions()?;
+    let tile_attrs = self.tile_attributes.as_ref().unwrap();
+    let (padding_right, padding_down) = tile_attrs.get_padding(chunk_index as usize);
 
-    match self.chunk_type {
-      ChunkType::Tile => {
-        let tile_attrs = self.tile_attributes.as_ref().unwrap();
-        let (padding_right, padding_down) = tile_attrs.get_padding(chunk_index as usize);
+    let tile_width = tile_attrs.tile_width - padding_right;
+    let tile_length = tile_attrs.tile_length - padding_down;
 
-        let tile_width = tile_attrs.tile_width - padding_right;
-        let tile_length = tile_attrs.tile_length - padding_down;
-
-        Ok((u32::try_from(tile_width)?, u32::try_from(tile_length)?))
-      }
-    }
+    Ok((u32::try_from(tile_width)?, u32::try_from(tile_length)?))
   }
 
   pub(crate) fn expand_chunk(
@@ -416,11 +382,7 @@ impl Image {
 
     let padding_right = chunk_dims.0 - data_dims.0;
 
-    let mut reader = Self::create_reader(
-      reader,
-      compression_method,
-      *compressed_bytes,
-    )?;
+    let mut reader = Self::create_reader(reader, compression_method, *compressed_bytes)?;
 
     if output_width == data_dims.0 as usize && padding_right == 0 {
       let total_samples = data_dims.0 as usize * data_dims.1 as usize * samples;

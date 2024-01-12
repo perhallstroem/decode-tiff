@@ -12,11 +12,8 @@ use self::{
 };
 use crate::{
   bytecast,
-  tags::{
-    CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat,
-    Tag, Type,
-  },
-  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError,
+  tags::{CompressionMethod, PhotometricInterpretation, Predictor, SampleFormat, Tag, Type},
+  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
 pub mod ifd;
@@ -556,9 +553,6 @@ impl<R: Read + Seek> Decoder<R> {
         photometric_interpretation: PhotometricInterpretation::BlackIsZero,
         compression_method: CompressionMethod::None,
         predictor: Predictor::None,
-        chunk_type: ChunkType::Tile,
-        planar_config: PlanarConfiguration::Chunky,
-        strip_decoder: None,
         tile_attributes: None,
         chunk_offsets: Vec::new(),
         chunk_bytes: Vec::new(),
@@ -575,10 +569,6 @@ impl<R: Read + Seek> Decoder<R> {
 
   pub fn dimensions(&mut self) -> TiffResult<(u32, u32)> {
     Ok((self.image().width, self.image().height))
-  }
-
-  pub fn colortype(&mut self) -> TiffResult<ColorType> {
-    self.image().colortype()
   }
 
   fn image(&self) -> &Image {
@@ -936,25 +926,8 @@ impl<R: Read + Seek> Decoder<R> {
     self.get_tag(tag)?.into_string()
   }
 
-  fn check_chunk_type(&self, expected: ChunkType) -> TiffResult<()> {
-    if expected != self.image().chunk_type {
-      return Err(TiffError::UsageError(UsageError::InvalidChunkType(
-        expected,
-        self.image().chunk_type,
-      )));
-    }
-
-    Ok(())
-  }
-
-  /// The chunk type (Strips / Tiles) of the image
-  pub fn get_chunk_type(&self) -> ChunkType {
-    self.image().chunk_type
-  }
-
   /// Number of tiles in image
   pub fn tile_count(&mut self) -> TiffResult<u32> {
-    self.check_chunk_type(ChunkType::Tile)?;
     Ok(u32::try_from(self.image().chunk_offsets.len())?)
   }
 
@@ -1058,7 +1031,7 @@ impl<R: Read + Seek> Decoder<R> {
     let chunks_across = ((width - 1) / chunk_dimensions.0 + 1) as usize;
     let strip_samples = width as usize * chunk_dimensions.1 as usize * samples;
 
-    let image_chunks = self.image().chunk_offsets.len() / self.image().strips_per_pixel();
+    let image_chunks = self.image().chunk_offsets.len();
     // For multi-band images, only the first band is read.
     // Possible improvements:
     // * pass requested band as parameter
