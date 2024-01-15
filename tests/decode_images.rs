@@ -2,9 +2,7 @@ extern crate tiff;
 
 use std::{fs::File, path::PathBuf};
 
-use tiff::{
-  decoder::{Decoder, DecodingResult},
-};
+use tiff::decoder::{Decoder, DecodingResult};
 
 const TEST_IMAGE_DIR: &str = "./tests/images/";
 

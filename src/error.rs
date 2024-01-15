@@ -4,7 +4,6 @@ use crate::{
   decoder::{ifd::Value, ChunkType},
   tags::{CompressionMethod, PlanarConfiguration, SampleFormat, Tag},
   weezl::LzwError,
-
 };
 
 /// Tiff error kinds.

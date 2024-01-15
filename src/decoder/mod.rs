@@ -13,7 +13,7 @@ use self::{
 use crate::{
   bytecast,
   tags::{CompressionMethod, Predictor, SampleFormat, Tag, Type},
-   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
+  TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
 pub mod ifd;

@@ -13,9 +13,7 @@ use super::{
   DecodingBuffer, Limits,
 };
 use crate::{
-  tags::{
-    CompressionMethod, PlanarConfiguration, Predictor, SampleFormat, Tag,
-  },
+  tags::{CompressionMethod, PlanarConfiguration, Predictor, SampleFormat, Tag},
   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
@@ -266,10 +264,10 @@ impl Image {
     &self, reader: impl Read, mut buffer: DecodingBuffer, output_width: usize,
     byte_order: ByteOrder, chunk_index: u32, limits: &Limits,
   ) -> TiffResult<()> {
-
     // Validate that the predictor is supported for the sample type.
     match (self.predictor, &buffer) {
-      (Predictor::Horizontal, DecodingBuffer::F32(_)) | (Predictor::Horizontal, DecodingBuffer::F64(_)) => {
+      (Predictor::Horizontal, DecodingBuffer::F32(_))
+      | (Predictor::Horizontal, DecodingBuffer::F64(_)) => {
         return Err(TiffError::UnsupportedError(TiffUnsupportedError::HorizontalPredictor));
       }
       (Predictor::FloatingPoint, DecodingBuffer::F32(_))
