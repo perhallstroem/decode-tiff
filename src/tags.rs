@@ -180,19 +180,6 @@ pub enum CompressionMethod(u16) unknown("A custom compression method") {
 }
 
 tags! {
-pub enum PhotometricInterpretation(u16) {
-    WhiteIsZero = 0,
-    BlackIsZero = 1,
-    RGB = 2,
-    RGBPalette = 3,
-    TransparencyMask = 4,
-    CMYK = 5,
-    YCbCr = 6,
-    CIELab = 8,
-}
-}
-
-tags! {
 pub enum PlanarConfiguration(u16) {
     Chunky = 1,
 }

@@ -14,9 +14,9 @@ use super::{
 };
 use crate::{
   tags::{
-    CompressionMethod, PhotometricInterpretation, PlanarConfiguration, Predictor, SampleFormat, Tag,
+    CompressionMethod, PlanarConfiguration, Predictor, SampleFormat, Tag,
   },
-  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
+  TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
 #[derive(Debug)]
@@ -67,7 +67,6 @@ pub(crate) struct Image {
   #[allow(unused)]
   pub samples: u16,
   pub sample_format: Vec<SampleFormat>,
-  pub photometric_interpretation: PhotometricInterpretation,
   pub compression_method: CompressionMethod,
   pub predictor: Predictor,
   pub tile_attributes: Option<TileAttributes>,
@@ -86,13 +85,6 @@ impl Image {
     if width == 0 || height == 0 {
       return Err(TiffError::FormatError(TiffFormatError::InvalidDimensions(width, height)));
     }
-
-    let photometric_interpretation = tag_reader
-      .find_tag(Tag::PhotometricInterpretation)?
-      .map(Value::into_u16)
-      .transpose()?
-      .and_then(PhotometricInterpretation::from_u16)
-      .ok_or(TiffUnsupportedError::UnknownInterpretation)?;
 
     // Try to parse both the compression method and the number, format, and bits of the included
     // samples. If they are not explicitly specified, those tags are reset to their default
@@ -206,56 +198,12 @@ impl Image {
       bits_per_sample: bits_per_sample[0],
       samples,
       sample_format,
-      photometric_interpretation,
       compression_method,
       predictor,
       tile_attributes,
       chunk_offsets,
       chunk_bytes,
     })
-  }
-
-  pub(crate) fn colortype(&self) -> TiffResult<ColorType> {
-    match self.photometric_interpretation {
-      PhotometricInterpretation::RGB => match self.samples {
-        3 => Ok(ColorType::RGB(self.bits_per_sample)),
-        4 => Ok(ColorType::RGBA(self.bits_per_sample)),
-        // FIXME: We should _ignore_ other components. In particular:
-        // > Beware of extra components. Some TIFF files may have more components per pixel
-        // than you think. A Baseline TIFF reader must skip over them gracefully,using the
-        // values of the SamplesPerPixel and BitsPerSample fields.
-        // > -- TIFF 6.0 Specification, Section 7, Additional Baseline requirements.
-        _ => Err(TiffError::UnsupportedError(TiffUnsupportedError::InterpretationWithBits(
-          self.photometric_interpretation,
-          vec![self.bits_per_sample; self.samples as usize],
-        ))),
-      },
-      PhotometricInterpretation::CMYK => match self.samples {
-        4 => Ok(ColorType::CMYK(self.bits_per_sample)),
-        _ => Err(TiffError::UnsupportedError(TiffUnsupportedError::InterpretationWithBits(
-          self.photometric_interpretation,
-          vec![self.bits_per_sample; self.samples as usize],
-        ))),
-      },
-      PhotometricInterpretation::YCbCr => match self.samples {
-        3 => Ok(ColorType::YCbCr(self.bits_per_sample)),
-        _ => Err(TiffError::UnsupportedError(TiffUnsupportedError::InterpretationWithBits(
-          self.photometric_interpretation,
-          vec![self.bits_per_sample; self.samples as usize],
-        ))),
-      },
-      PhotometricInterpretation::BlackIsZero | PhotometricInterpretation::WhiteIsZero
-        if self.samples == 1 =>
-      {
-        Ok(ColorType::Gray(self.bits_per_sample))
-      }
-
-      // TODO: this is bad we should not fail at this point
-      _ => Err(TiffError::UnsupportedError(TiffUnsupportedError::InterpretationWithBits(
-        self.photometric_interpretation,
-        vec![self.bits_per_sample; self.samples as usize],
-      ))),
-    }
   }
 
   fn create_reader<'r, R: 'r + Read>(
@@ -318,47 +266,16 @@ impl Image {
     &self, reader: impl Read, mut buffer: DecodingBuffer, output_width: usize,
     byte_order: ByteOrder, chunk_index: u32, limits: &Limits,
   ) -> TiffResult<()> {
-    // Validate that the provided buffer is of the expected type.
-    let color_type = self.colortype()?;
-    match (color_type, &buffer) {
-      (ColorType::RGB(n), _)
-      | (ColorType::RGBA(n), _)
-      | (ColorType::CMYK(n), _)
-      | (ColorType::YCbCr(n), _)
-      | (ColorType::Gray(n), _)
-        if usize::from(n) == buffer.byte_len() * 8 => {}
-      (ColorType::Gray(n), DecodingBuffer::U8(_)) if n < 8 => match self.predictor {
-        Predictor::None => {}
-        Predictor::Horizontal => {
-          return Err(TiffError::UnsupportedError(TiffUnsupportedError::HorizontalPredictor(
-            color_type,
-          )))
-        }
-        Predictor::FloatingPoint => {
-          return Err(TiffError::UnsupportedError(TiffUnsupportedError::FloatingPointPredictor(
-            color_type,
-          )));
-        }
-      },
-      (type_, _) => {
-        return Err(TiffError::UnsupportedError(TiffUnsupportedError::UnsupportedColorType(type_)))
-      }
-    }
 
     // Validate that the predictor is supported for the sample type.
     match (self.predictor, &buffer) {
-      (Predictor::Horizontal, DecodingBuffer::F32(_))
-      | (Predictor::Horizontal, DecodingBuffer::F64(_)) => {
-        return Err(TiffError::UnsupportedError(TiffUnsupportedError::HorizontalPredictor(
-          color_type,
-        )));
+      (Predictor::Horizontal, DecodingBuffer::F32(_)) | (Predictor::Horizontal, DecodingBuffer::F64(_)) => {
+        return Err(TiffError::UnsupportedError(TiffUnsupportedError::HorizontalPredictor));
       }
       (Predictor::FloatingPoint, DecodingBuffer::F32(_))
       | (Predictor::FloatingPoint, DecodingBuffer::F64(_)) => {}
       (Predictor::FloatingPoint, _) => {
-        return Err(TiffError::UnsupportedError(TiffUnsupportedError::FloatingPointPredictor(
-          color_type,
-        )));
+        return Err(TiffError::UnsupportedError(TiffUnsupportedError::FloatingPointPredictor));
       }
       _ => {}
     }
@@ -373,7 +290,6 @@ impl Image {
 
     let byte_len = buffer.byte_len();
     let compression_method = self.compression_method;
-    let photometric_interpretation = self.photometric_interpretation;
     let predictor = self.predictor;
     let samples = self.samples_per_pixel();
 
@@ -395,9 +311,6 @@ impl Image {
         let row = buffer.subrange(row_start..row_end);
         super::fix_endianness_and_predict(row, samples, byte_order, predictor);
       }
-      if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-        super::invert_colors(&mut buffer.subrange(0..total_samples), color_type);
-      }
     } else if padding_right > 0 && self.predictor == Predictor::FloatingPoint {
       // The floating point predictor shuffles the padding bytes into the encoded output, so
       // this case is handled specially when needed.
@@ -412,9 +325,6 @@ impl Image {
           DecodingBuffer::F32(buf) => fp_predict_f32(&mut encoded, buf, samples),
           DecodingBuffer::F64(buf) => fp_predict_f64(&mut encoded, buf, samples),
           _ => unreachable!(),
-        }
-        if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-          super::invert_colors(&mut buffer.subrange(row_start..row_end), color_type);
         }
       }
     } else {
@@ -433,9 +343,6 @@ impl Image {
 
         let mut row = buffer.subrange(row_start..row_end);
         super::fix_endianness_and_predict(row.copy(), samples, byte_order, predictor);
-        if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
-          super::invert_colors(&mut row, color_type);
-        }
       }
     }
 

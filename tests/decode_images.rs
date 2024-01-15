@@ -4,7 +4,6 @@ use std::{fs::File, path::PathBuf};
 
 use tiff::{
   decoder::{Decoder, DecodingResult},
-  ColorType,
 };
 
 const TEST_IMAGE_DIR: &str = "./tests/images/";
@@ -60,7 +59,6 @@ fn test_tiled_cmyk_i8() {
 #[test]
 fn test_tiled_incremental() {
   let file = "tiled-rgb-u8.tif";
-  let expected_type = ColorType::RGB(8);
   let sums = [
     188760, 195639, 108148, 81986, 665088, 366140, 705317, 423366, 172033, 324455, 244102, 81853,
     181258, 247971, 129486, 55600, 565625, 422102, 730888, 379271, 232142, 292549, 244045, 86866,

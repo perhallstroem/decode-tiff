@@ -24,31 +24,6 @@ pub mod decoder;
 mod error;
 pub mod tags;
 
-/// An enumeration over supported color types and their bit depths
-#[derive(Copy, PartialEq, Eq, Debug, Clone, Hash)]
-pub enum ColorType {
-  /// Pixel is grayscale
-  Gray(u8),
-
-  /// Pixel contains R, G and B channels
-  RGB(u8),
-
-  /// Pixel is an index into a color palette
-  Palette(u8),
-
-  /// Pixel is grayscale with an alpha channel
-  GrayA(u8),
-
-  /// Pixel is RGB with an alpha channel
-  RGBA(u8),
-
-  /// Pixel is CMYK
-  CMYK(u8),
-
-  /// Pixel is YCbCr
-  YCbCr(u8),
-}
-
 const TEST_IMAGE_DIR: &str = "./tests/images";
 
 #[ignore]

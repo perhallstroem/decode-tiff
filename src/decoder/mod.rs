@@ -12,8 +12,8 @@ use self::{
 };
 use crate::{
   bytecast,
-  tags::{CompressionMethod, PhotometricInterpretation, Predictor, SampleFormat, Tag, Type},
-  ColorType, TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
+  tags::{CompressionMethod, Predictor, SampleFormat, Tag, Type},
+   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
 pub mod ifd;
@@ -368,21 +368,19 @@ fn rev_hpredict_nsamp<T: Copy + Wrapping>(image: &mut [T], samples: usize) {
 pub fn fp_predict_f32(input: &mut [u8], output: &mut [f32], samples: usize) {
   rev_hpredict_nsamp(input, samples);
   for i in 0..output.len() {
-    // TODO: use f32::from_be_bytes() when we can (version 1.40)
-    output[i] = f32::from_bits(u32::from_be_bytes([
+    output[i] = f32::from_be_bytes([
       input[i],
       input[input.len() / 4 + i],
       input[input.len() / 4 * 2 + i],
       input[input.len() / 4 * 3 + i],
-    ]));
+    ]);
   }
 }
 
 pub fn fp_predict_f64(input: &mut [u8], output: &mut [f64], samples: usize) {
   rev_hpredict_nsamp(input, samples);
   for i in 0..output.len() {
-    // TODO: use f64::from_be_bytes() when we can (version 1.40)
-    output[i] = f64::from_bits(u64::from_be_bytes([
+    output[i] = f64::from_be_bytes([
       input[i],
       input[input.len() / 8 + i],
       input[input.len() / 8 * 2 + i],
@@ -391,7 +389,7 @@ pub fn fp_predict_f64(input: &mut [u8], output: &mut [f64], samples: usize) {
       input[input.len() / 8 * 5 + i],
       input[input.len() / 8 * 6 + i],
       input[input.len() / 8 * 7 + i],
-    ]));
+    ])
   }
 }
 
@@ -435,30 +433,6 @@ where
 {
   for datum in buffer.iter_mut() {
     *datum = max - *datum
-  }
-}
-
-fn invert_colors(buf: &mut DecodingBuffer, color_type: ColorType) {
-  match (color_type, buf) {
-    (ColorType::Gray(64), DecodingBuffer::U64(buffer)) => {
-      buffer_subtract(buffer, 0xffff_ffff_ffff_ffff);
-    }
-    (ColorType::Gray(32), DecodingBuffer::U32(buffer)) => {
-      buffer_subtract(buffer, 0xffff_ffff);
-    }
-    (ColorType::Gray(16), DecodingBuffer::U16(buffer)) => {
-      buffer_subtract(buffer, 0xffff);
-    }
-    (ColorType::Gray(n), DecodingBuffer::U8(buffer)) if n <= 8 => {
-      buffer_subtract(buffer, 0xff);
-    }
-    (ColorType::Gray(32), DecodingBuffer::F32(buffer)) => {
-      buffer_subtract(buffer, 1.0);
-    }
-    (ColorType::Gray(64), DecodingBuffer::F64(buffer)) => {
-      buffer_subtract(buffer, 1.0);
-    }
-    _ => {}
   }
 }
 
@@ -550,7 +524,6 @@ impl<R: Read + Seek> Decoder<R> {
         bits_per_sample: 1,
         samples: 1,
         sample_format: vec![SampleFormat::Uint],
-        photometric_interpretation: PhotometricInterpretation::BlackIsZero,
         compression_method: CompressionMethod::None,
         predictor: Predictor::None,
         tile_attributes: None,

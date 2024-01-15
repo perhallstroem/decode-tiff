@@ -2,9 +2,9 @@ use std::{error::Error, fmt, io, str, string};
 
 use crate::{
   decoder::{ifd::Value, ChunkType},
-  tags::{CompressionMethod, PhotometricInterpretation, PlanarConfiguration, SampleFormat, Tag},
+  tags::{CompressionMethod, PlanarConfiguration, SampleFormat, Tag},
   weezl::LzwError,
-  ColorType,
+
 };
 
 /// Tiff error kinds.
@@ -123,44 +123,28 @@ impl fmt::Display for TiffFormatError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum TiffUnsupportedError {
-  FloatingPointPredictor(ColorType),
-  HorizontalPredictor(ColorType),
+  FloatingPointPredictor,
+  HorizontalPredictor,
   InconsistentBitsPerSample(Vec<u8>),
-  InterpretationWithBits(PhotometricInterpretation, Vec<u8>),
-  UnknownInterpretation,
-  UnknownCompressionMethod,
   UnsupportedCompressionMethod(CompressionMethod),
   UnsupportedSampleDepth(u8),
   UnsupportedSampleFormat(Vec<SampleFormat>),
-  UnsupportedColorType(ColorType),
   UnsupportedBitsPerChannel(u8),
-  UnsupportedPlanarConfig(Option<PlanarConfiguration>),
-  UnsupportedDataType,
-  UnsupportedInterpretation(PhotometricInterpretation),
 }
 
 impl fmt::Display for TiffUnsupportedError {
   fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
     use self::TiffUnsupportedError::*;
     match *self {
-      FloatingPointPredictor(color_type) => {
-        write!(fmt, "Floating point predictor for {:?} is unsupported.", color_type)
+      FloatingPointPredictor => {
+        write!(fmt, "Floating point predictor for is unsupported for this image")
       }
-      HorizontalPredictor(color_type) => {
-        write!(fmt, "Horizontal predictor for {:?} is unsupported.", color_type)
+      HorizontalPredictor => {
+        write!(fmt, "Horizontal predictor for is unsupported for this image")
       }
       InconsistentBitsPerSample(ref bits_per_sample) => {
         write!(fmt, "Inconsistent bits per sample: {:?}.", bits_per_sample)
       }
-      InterpretationWithBits(ref photometric_interpretation, ref bits_per_sample) => write!(
-        fmt,
-        "{:?} with {:?} bits per sample is unsupported",
-        photometric_interpretation, bits_per_sample
-      ),
-      UnknownInterpretation => {
-        write!(fmt, "The image is using an unknown photometric interpretation.")
-      }
-      UnknownCompressionMethod => write!(fmt, "Unknown compression method."),
       UnsupportedCompressionMethod(method) => {
         write!(fmt, "Compression method {:?} is unsupported", method)
       }
@@ -170,18 +154,8 @@ impl fmt::Display for TiffUnsupportedError {
       UnsupportedSampleFormat(ref formats) => {
         write!(fmt, "Sample format {:?} is unsupported.", formats)
       }
-      UnsupportedColorType(color_type) => {
-        write!(fmt, "Color type {:?} is unsupported", color_type)
-      }
       UnsupportedBitsPerChannel(bits) => {
         write!(fmt, "{} bits per channel not supported", bits)
-      }
-      UnsupportedPlanarConfig(config) => {
-        write!(fmt, "Unsupported planar configuration “{:?}”.", config)
-      }
-      UnsupportedDataType => write!(fmt, "Unsupported data type."),
-      UnsupportedInterpretation(interpretation) => {
-        write!(fmt, "Unsupported photometric interpretation \"{:?}\".", interpretation)
       }
     }
   }
