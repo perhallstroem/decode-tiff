@@ -295,8 +295,6 @@ impl Default for Limits {
 /// Currently does not support decoding of interlaced images
 #[derive(Debug)]
 pub struct Decoder<R>
-where
-  R: Read + Seek,
 {
   reader: SmartReader<R>,
   bigtiff: bool,
@@ -424,15 +422,6 @@ fn fix_endianness_and_predict(
         _ => unreachable!("Caller should have validated arguments. Please file a bug."),
       }
     }
-  }
-}
-
-fn buffer_subtract<T>(buffer: &mut [T], max: T)
-where
-  T: std::ops::Sub<T> + std::ops::Sub<Output = T> + Copy,
-{
-  for datum in buffer.iter_mut() {
-    *datum = max - *datum
   }
 }
 

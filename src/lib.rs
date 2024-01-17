@@ -11,6 +11,8 @@ extern crate weezl;
 
 #[cfg(test)]
 use std::{fs::File, path::PathBuf};
+use std::io;
+use std::io::{Read, Seek};
 
 pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError, UsageError};
 #[cfg(test)]
@@ -25,6 +27,8 @@ mod error;
 pub mod tags;
 
 const TEST_IMAGE_DIR: &str = "./tests/images";
+
+
 
 // #[test]
 // #[ignore]

@@ -178,10 +178,7 @@ impl<R: Read> Read for LZWReader<R> {
 
 /// Reader that is aware of the byte order.
 #[derive(Debug)]
-pub struct SmartReader<R>
-where
-  R: Read,
-{
+pub struct SmartReader<R> {
   reader: R,
   pub byte_order: ByteOrder,
 }

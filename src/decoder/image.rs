@@ -3,8 +3,6 @@ use std::{
   io::{self, Read, Seek},
 };
 
-use log::trace;
-
 use super::{
   fp_predict_f32, fp_predict_f64,
   ifd::{Directory, Value},

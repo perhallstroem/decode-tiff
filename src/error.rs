@@ -2,7 +2,7 @@ use std::{error::Error, fmt, io, str, string};
 
 use crate::{
   decoder::{ifd::Value, ChunkType},
-  tags::{CompressionMethod, PlanarConfiguration, SampleFormat, Tag},
+  tags::{CompressionMethod, SampleFormat, Tag},
   weezl::LzwError,
 };
 
