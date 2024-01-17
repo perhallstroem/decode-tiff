@@ -633,58 +633,15 @@ impl<R: Read + Seek> Decoder<R> {
     }
   }
 
-  /// Reads a TIFF byte value
-  #[inline]
-  pub fn read_byte(&mut self) -> Result<u8, io::Error> {
-    let mut buf = [0; 1];
-    self.reader.read_exact(&mut buf)?;
-    Ok(buf[0])
-  }
-
-  /// Reads a TIFF short value
-  #[inline]
-  pub fn read_short(&mut self) -> Result<u16, io::Error> {
-    self.reader.read_u16()
-  }
-
-  /// Reads a TIFF sshort value
-  #[inline]
-  pub fn read_sshort(&mut self) -> Result<i16, io::Error> {
-    self.reader.read_i16()
-  }
-
   /// Reads a TIFF long value
   #[inline]
   pub fn read_long(&mut self) -> Result<u32, io::Error> {
     self.reader.read_u32()
   }
 
-  /// Reads a TIFF slong value
-  #[inline]
-  pub fn read_slong(&mut self) -> Result<i32, io::Error> {
-    self.reader.read_i32()
-  }
-
-  /// Reads a TIFF float value
-  #[inline]
-  pub fn read_float(&mut self) -> Result<f32, io::Error> {
-    self.reader.read_f32()
-  }
-
-  /// Reads a TIFF double value
-  #[inline]
-  pub fn read_double(&mut self) -> Result<f64, io::Error> {
-    self.reader.read_f64()
-  }
-
   #[inline]
   pub fn read_long8(&mut self) -> Result<u64, io::Error> {
     self.reader.read_u64()
-  }
-
-  #[inline]
-  pub fn read_slong8(&mut self) -> Result<i64, io::Error> {
-    self.reader.read_i64()
   }
 
   /// Reads a string
@@ -697,31 +654,6 @@ impl<R: Read + Seek> Decoder<R> {
       out.truncate(first);
     }
     Ok(String::from_utf8(out)?)
-  }
-
-  /// Reads a TIFF IFA offset/value field
-  #[inline]
-  pub fn read_offset(&mut self) -> TiffResult<[u8; 4]> {
-    if self.bigtiff {
-      return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
-    }
-    let mut val = [0; 4];
-    self.reader.read_exact(&mut val)?;
-    Ok(val)
-  }
-
-  /// Reads a TIFF IFA offset/value field
-  #[inline]
-  pub fn read_offset_u64(&mut self) -> Result<[u8; 8], io::Error> {
-    let mut val = [0; 8];
-    self.reader.read_exact(&mut val)?;
-    Ok(val)
-  }
-
-  /// Moves the cursor to the specified offset
-  #[inline]
-  pub fn goto_offset(&mut self, offset: u32) -> io::Result<()> {
-    self.goto_offset_u64(offset.into())
   }
 
   #[inline]
@@ -845,58 +777,6 @@ impl<R: Read + Seek> Decoder<R> {
       Some(val) => Ok(val),
       None => Err(TiffError::FormatError(TiffFormatError::RequiredTagNotFound(tag))),
     }
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_u32(&mut self, tag: Tag) -> TiffResult<u32> {
-    self.get_tag(tag)?.into_u32()
-  }
-
-  pub fn get_tag_u64(&mut self, tag: Tag) -> TiffResult<u64> {
-    self.get_tag(tag)?.into_u64()
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_f32(&mut self, tag: Tag) -> TiffResult<f32> {
-    self.get_tag(tag)?.into_f32()
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_f64(&mut self, tag: Tag) -> TiffResult<f64> {
-    self.get_tag(tag)?.into_f64()
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_u32_vec(&mut self, tag: Tag) -> TiffResult<Vec<u32>> {
-    self.get_tag(tag)?.into_u32_vec()
-  }
-
-  pub fn get_tag_u16_vec(&mut self, tag: Tag) -> TiffResult<Vec<u16>> {
-    self.get_tag(tag)?.into_u16_vec()
-  }
-
-  pub fn get_tag_u64_vec(&mut self, tag: Tag) -> TiffResult<Vec<u64>> {
-    self.get_tag(tag)?.into_u64_vec()
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_f32_vec(&mut self, tag: Tag) -> TiffResult<Vec<f32>> {
-    self.get_tag(tag)?.into_f32_vec()
-  }
-
-  /// Tries to retrieve a tag and convert it to the desired type.
-  pub fn get_tag_f64_vec(&mut self, tag: Tag) -> TiffResult<Vec<f64>> {
-    self.get_tag(tag)?.into_f64_vec()
-  }
-
-  /// Tries to retrieve a tag and convert it to a 8bit vector.
-  pub fn get_tag_u8_vec(&mut self, tag: Tag) -> TiffResult<Vec<u8>> {
-    self.get_tag(tag)?.into_u8_vec()
-  }
-
-  /// Tries to retrieve a tag and convert it to a ascii vector.
-  pub fn get_tag_ascii_string(&mut self, tag: Tag) -> TiffResult<String> {
-    self.get_tag(tag)?.into_string()
   }
 
   /// Number of tiles in image

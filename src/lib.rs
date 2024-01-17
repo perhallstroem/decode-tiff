@@ -26,6 +26,31 @@ pub mod tags;
 
 const TEST_IMAGE_DIR: &str = "./tests/images";
 
+// #[test]
+// #[ignore]
+// fn api_usage() {
+//   let path = PathBuf::from("/Users/perh/Downloads/000_pq4fee8bf1-DSM.tiff");
+//   let img_file = File::open(path).expect("Cannot find test image!");
+//   let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
+//
+//   let dimensions = decoder.dimensions().unwrap();
+//   // let tile_dim = decoder.tile_dimensions();
+//
+//
+//   eprintln!("Image / tile dimensions: {dimensions:?} / {tile_dim:?}");
+//
+//   let x1 = 123;
+//   let x2 = 234;
+//   let y1 = 234;
+//   let y2 = 345;
+//
+//   let range = x1..x2;
+//   let range1 = y1..y2;
+//   let buffer = decoder.read(range, range1);
+//
+//
+// }
+
 #[ignore]
 #[test]
 fn example() {
