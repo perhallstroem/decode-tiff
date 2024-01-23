@@ -80,7 +80,7 @@ fn test_tiled_incremental() {
   let img_file = File::open(path).expect("Cannot find test image!");
   let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
 
-  let tiles = decoder.tile_count().unwrap();
+  let tiles = decoder.tile_count();
   assert_eq!(tiles as usize, sums.len());
 
   for tile in 0..tiles {

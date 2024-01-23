@@ -25,6 +25,12 @@ pub(crate) struct TileAttributes {
   pub tile_length: usize,
 }
 
+impl Default for TileAttributes {
+  fn default() -> Self {
+    Self { image_width: 0, image_height: 0, tile_width: 0, tile_length: 0 }
+  }
+}
+
 impl TileAttributes {
   pub fn tiles_across(&self) -> usize {
     (self.image_width + self.tile_width - 1) / self.tile_width
@@ -42,7 +48,7 @@ impl TileAttributes {
     (self.tile_length - self.image_height % self.tile_length) % self.tile_length
   }
 
-  pub fn get_padding(&self, tile: usize) -> (usize, usize) {
+  fn get_padding(&self, tile: usize) -> (usize, usize) {
     let row = tile / self.tiles_across();
     let column = tile % self.tiles_across();
 
@@ -57,15 +63,13 @@ impl TileAttributes {
 #[derive(Debug)]
 pub(crate) struct Image {
   pub ifd: Option<Directory>,
-  pub width: u32,
-  pub height: u32,
   pub bits_per_sample: u8,
   #[allow(unused)]
   pub samples: u16,
   pub sample_format: Vec<SampleFormat>,
   pub compression_method: CompressionMethod,
   pub predictor: Predictor,
-  pub tile_attributes: Option<TileAttributes>,
+  pub tile_attributes: TileAttributes,
   pub chunk_offsets: Vec<u64>,
   pub chunk_bytes: Vec<u64>,
 }
@@ -166,18 +170,18 @@ impl Image {
           return Err(TiffFormatError::InvalidTagValueType(Tag::TileLength).into());
         }
 
-        tile_attributes = Some(TileAttributes {
+        tile_attributes = TileAttributes {
           image_width: usize::try_from(width)?,
           image_height: usize::try_from(height)?,
           tile_width,
           tile_length,
-        });
+        };
         chunk_offsets = tag_reader.find_tag(Tag::TileOffsets)?.unwrap().into_u64_vec()?;
         chunk_bytes = tag_reader.find_tag(Tag::TileByteCounts)?.unwrap().into_u64_vec()?;
 
-        let tile = tile_attributes.as_ref().unwrap();
         if chunk_offsets.len() != chunk_bytes.len()
-          || chunk_offsets.len() != tile.tiles_down() * tile.tiles_across() * planes as usize
+          || chunk_offsets.len()
+            != tile_attributes.tiles_down() * tile_attributes.tiles_across() * planes as usize
         {
           return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
         }
@@ -189,8 +193,6 @@ impl Image {
 
     Ok(Image {
       ifd: Some(ifd),
-      width,
-      height,
       bits_per_sample: bits_per_sample[0],
       samples,
       sample_format,
@@ -229,10 +231,10 @@ impl Image {
     self.samples.into()
   }
 
-  pub(crate) fn chunk_file_range(&self, chunk: u32) -> TiffResult<(u64, u64)> {
+  pub(crate) fn chunk_file_range(&self, chunk: usize) -> TiffResult<(u64, u64)> {
     let file_offset = self
       .chunk_offsets
-      .get(chunk as usize)
+      .get(chunk)
       .ok_or(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered))?;
 
     let compressed_bytes = self
@@ -243,24 +245,24 @@ impl Image {
     Ok((*file_offset, *compressed_bytes))
   }
 
-  pub(crate) fn chunk_dimensions(&self) -> TiffResult<(u32, u32)> {
-    let tile_attrs = self.tile_attributes.as_ref().unwrap();
-    Ok((u32::try_from(tile_attrs.tile_width)?, u32::try_from(tile_attrs.tile_length)?))
+  pub(crate) fn chunk_dimensions(&self) -> (usize, usize) {
+    let tile_attrs = &self.tile_attributes;
+    (tile_attrs.tile_width, tile_attrs.tile_length)
   }
 
-  pub(crate) fn chunk_data_dimensions(&self, chunk_index: u32) -> TiffResult<(u32, u32)> {
-    let tile_attrs = self.tile_attributes.as_ref().unwrap();
-    let (padding_right, padding_down) = tile_attrs.get_padding(chunk_index as usize);
+  pub(crate) fn chunk_data_dimensions(&self, chunk_index: usize) -> (usize, usize) {
+    let tile_attrs = &self.tile_attributes;
+    let (padding_right, padding_down) = tile_attrs.get_padding(chunk_index);
 
     let tile_width = tile_attrs.tile_width - padding_right;
     let tile_length = tile_attrs.tile_length - padding_down;
 
-    Ok((u32::try_from(tile_width)?, u32::try_from(tile_length)?))
+    (tile_width, tile_length)
   }
 
   pub(crate) fn expand_chunk(
     &self, reader: impl Read, mut buffer: DecodingBuffer, output_width: usize,
-    byte_order: ByteOrder, chunk_index: u32, limits: &Limits,
+    byte_order: ByteOrder, chunk_index: usize, limits: &Limits,
   ) -> TiffResult<()> {
     // Validate that the predictor is supported for the sample type.
     match (self.predictor, &buffer) {
@@ -289,8 +291,8 @@ impl Image {
     let predictor = self.predictor;
     let samples = self.samples_per_pixel();
 
-    let chunk_dims = self.chunk_dimensions()?;
-    let data_dims = self.chunk_data_dimensions(chunk_index)?;
+    let chunk_dims = self.chunk_dimensions();
+    let data_dims = self.chunk_data_dimensions(chunk_index);
 
     let padding_right = chunk_dims.0 - data_dims.0;
 
@@ -343,5 +345,13 @@ impl Image {
     }
 
     Ok(())
+  }
+
+  pub fn height(&self) -> usize {
+    self.tile_attributes.image_height
+  }
+
+  pub fn width(&self) -> usize {
+    self.tile_attributes.image_width
   }
 }

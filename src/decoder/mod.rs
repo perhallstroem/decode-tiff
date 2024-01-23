@@ -12,6 +12,7 @@ use self::{
 };
 use crate::{
   bytecast,
+  decoder::image::TileAttributes,
   tags::{CompressionMethod, Predictor, SampleFormat, Tag, Type},
   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
@@ -139,6 +140,21 @@ impl DecodingResult {
       DecodingResult::I16(ref mut buf) => DecodingBuffer::I16(&mut buf[start..]),
       DecodingResult::I32(ref mut buf) => DecodingBuffer::I32(&mut buf[start..]),
       DecodingResult::I64(ref mut buf) => DecodingBuffer::I64(&mut buf[start..]),
+    }
+  }
+
+  pub fn as_bytes(&self) -> &[u8] {
+    match self {
+      Self::U8(buf) => buf,
+      Self::I8(buf) => bytecast::i8_as_ne_bytes(buf),
+      Self::U16(buf) => bytecast::u16_as_ne_bytes(buf),
+      Self::I16(buf) => bytecast::i16_as_ne_bytes(buf),
+      Self::U32(buf) => bytecast::u32_as_ne_bytes(buf),
+      Self::I32(buf) => bytecast::i32_as_ne_bytes(buf),
+      Self::U64(buf) => bytecast::u64_as_ne_bytes(buf),
+      Self::I64(buf) => bytecast::i64_as_ne_bytes(buf),
+      Self::F32(buf) => bytecast::f32_as_ne_bytes(buf),
+      Self::F64(buf) => bytecast::f64_as_ne_bytes(buf),
     }
   }
 }
@@ -294,8 +310,7 @@ impl Default for Limits {
 ///
 /// Currently does not support decoding of interlaced images
 #[derive(Debug)]
-pub struct Decoder<R>
-{
+pub struct Decoder<R> {
   reader: SmartReader<R>,
   bigtiff: bool,
   limits: Limits,
@@ -461,6 +476,16 @@ fn fix_endianness(buf: &mut DecodingBuffer, byte_order: ByteOrder) {
   };
 }
 
+impl<R> Decoder<R> {
+  pub fn dimensions(&self) -> (usize, usize) {
+    (self.image().width(), self.image().height())
+  }
+
+  pub(crate) fn image(&self) -> &Image {
+    &self.image
+  }
+}
+
 impl<R: Read + Seek> Decoder<R> {
   /// Create a new decoder that decodes from the stream ```r```
   pub fn new(mut r: R) -> TiffResult<Decoder<R>> {
@@ -508,14 +533,12 @@ impl<R: Read + Seek> Decoder<R> {
       seen_ifds,
       image: Image {
         ifd: None,
-        width: 0,
-        height: 0,
         bits_per_sample: 1,
         samples: 1,
         sample_format: vec![SampleFormat::Uint],
         compression_method: CompressionMethod::None,
         predictor: Predictor::None,
-        tile_attributes: None,
+        tile_attributes: TileAttributes::default(),
         chunk_offsets: Vec::new(),
         chunk_bytes: Vec::new(),
       },
@@ -527,14 +550,6 @@ impl<R: Read + Seek> Decoder<R> {
   pub fn with_limits(mut self, limits: Limits) -> Decoder<R> {
     self.limits = limits;
     self
-  }
-
-  pub fn dimensions(&mut self) -> TiffResult<(u32, u32)> {
-    Ok((self.image().width, self.image().height))
-  }
-
-  fn image(&self) -> &Image {
-    &self.image
   }
 
   /// Loads the IFD at the specified index in the list, if one exists
@@ -769,12 +784,12 @@ impl<R: Read + Seek> Decoder<R> {
   }
 
   /// Number of tiles in image
-  pub fn tile_count(&mut self) -> TiffResult<u32> {
-    Ok(u32::try_from(self.image().chunk_offsets.len())?)
+  pub fn tile_count(&mut self) -> usize {
+    self.image().chunk_offsets.len()
   }
 
   pub fn read_chunk_to_buffer(
-    &mut self, mut buffer: DecodingBuffer, chunk_index: u32, output_width: usize,
+    &mut self, mut buffer: DecodingBuffer, chunk_index: usize, output_width: usize,
   ) -> TiffResult<()> {
     let offset = self.image.chunk_file_range(chunk_index)?.0;
     self.goto_offset_u64(offset)?;
@@ -827,8 +842,8 @@ impl<R: Read + Seek> Decoder<R> {
   }
 
   /// Read the specified chunk (at index `chunk_index`) and return the binary data as a Vector.
-  pub fn read_chunk(&mut self, chunk_index: u32) -> TiffResult<DecodingResult> {
-    let data_dims = self.image().chunk_data_dimensions(chunk_index)?;
+  pub fn read_chunk(&mut self, chunk_index: usize) -> TiffResult<DecodingResult> {
+    let data_dims = self.image().chunk_data_dimensions(chunk_index);
 
     let mut result = self.result_buffer(data_dims.0 as usize, data_dims.1 as usize)?;
 
@@ -840,26 +855,26 @@ impl<R: Read + Seek> Decoder<R> {
   /// Returns the default chunk size for the current image. Any given chunk in the image is at most
   /// as large as the value returned here. For the size of the data (chunk minus padding), use
   /// `chunk_data_dimensions`.
-  pub fn chunk_dimensions(&self) -> (u32, u32) {
-    self.image().chunk_dimensions().unwrap()
+  pub fn chunk_dimensions(&self) -> (usize, usize) {
+    self.image().chunk_dimensions()
   }
 
   /// Returns the size of the data in the chunk with the specified index. This is the default size
   /// of the chunk, minus any padding.
-  pub fn chunk_data_dimensions(&self, chunk_index: u32) -> (u32, u32) {
-    self.image().chunk_data_dimensions(chunk_index).expect("invalid chunk_index")
+  pub fn chunk_data_dimensions(&self, chunk_index: usize) -> (usize, usize) {
+    self.image().chunk_data_dimensions(chunk_index)
   }
 
   /// Decodes the entire image and return it as a Vector
   pub fn read_image(&mut self) -> TiffResult<DecodingResult> {
-    let width = self.image().width;
-    let height = self.image().height;
-    let mut result = self.result_buffer(width as usize, height as usize)?;
+    let width = self.image().width();
+    let height = self.image().height();
+    let mut result = self.result_buffer(width, height)?;
     if width == 0 || height == 0 {
       return Ok(result);
     }
 
-    let chunk_dimensions = self.image().chunk_dimensions()?;
+    let chunk_dimensions = self.image().chunk_dimensions();
     let chunk_dimensions = (chunk_dimensions.0.min(width), chunk_dimensions.1.min(height));
     if chunk_dimensions.0 == 0 || chunk_dimensions.1 == 0 {
       return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
@@ -890,7 +905,7 @@ impl<R: Read + Seek> Decoder<R> {
         result.as_buffer(buffer_offset).copy(),
         width as usize,
         byte_order,
-        chunk as u32,
+        chunk,
         &self.limits,
       )?;
     }
