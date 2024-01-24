@@ -105,8 +105,6 @@ impl Image {
         let sample_format: Vec<_> =
           vals.into_iter().map(SampleFormat::from_u16_exhaustive).collect();
 
-        eprintln!("SAMPLE FORMATS: {:?}", sample_format);
-
         // TODO: for now, only homogenous formats across samples are supported.
         if !sample_format.windows(2).all(|s| s[0] == s[1]) {
           return Err(TiffUnsupportedError::UnsupportedSampleFormat(sample_format).into());
@@ -119,8 +117,6 @@ impl Image {
 
     let bits_per_sample: Vec<u8> =
       tag_reader.find_tag_uint_vec(Tag::BitsPerSample)?.unwrap_or_else(|| vec![1]);
-
-    eprintln!("BITS PER SAMPLE: {bits_per_sample:?}");
 
     if bits_per_sample.len() != samples.into() {
       return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));

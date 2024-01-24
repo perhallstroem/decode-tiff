@@ -9,12 +9,9 @@
 
 extern crate weezl;
 
+use std::io::{Read, Seek};
 #[cfg(test)]
 use std::{fs::File, path::PathBuf};
-use std::{
-  io,
-  io::{Read, Seek},
-};
 
 pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError};
 #[cfg(test)]
@@ -32,7 +29,7 @@ const TEST_IMAGE_DIR: &str = "./tests/images";
 
 mod public_api {
   use std::{
-    fmt::{Display, Formatter},
+    fmt::Display,
     io::{Read, Seek},
   };
 
@@ -152,30 +149,31 @@ mod public_api {
     pub struct Decoded {
       bands: Box<[BandType]>,
       data: Box<[u8]>,
+      nodata_values: Box<[u8]>,
       pixel_len: Byte,
       width: usize,
       height: usize,
     }
 
-    // TODO: assertions that
-    // data.len() = width * height * pixel_len
-    // bands...width()...sum() = pixel_len
-    // ...
-
     impl Decoded {
-      pub(crate) fn new<B, D, W, H>(bands: B, data: D, width: W, height: H) -> Self
+      pub(crate) fn new<B, N, D, W, H>(
+        bands: B, nodata_values: N, data: D, width: W, height: H,
+      ) -> Self
       where
         B: Into<Box<[BandType]>>,
+        N: Into<Box<[u8]>>,
         D: Into<Box<[u8]>>,
         W: Into<usize>,
         H: Into<usize>,
       {
         let (width, height, bands, data) = (width.into(), height.into(), bands.into(), data.into());
         let pixel_len: usize = bands.iter().map(|b| usize::from(b.width())).sum();
+        let nodata_values = nodata_values.into();
 
+        assert_eq!(nodata_values.len(), pixel_len.into());
         assert_eq!(data.len(), width * height * pixel_len);
 
-        Self { bands, data, pixel_len: pixel_len.into(), width, height }
+        Self { bands, data, nodata_values, pixel_len: pixel_len.into(), width, height }
       }
 
       pub fn width(&self) -> usize {
@@ -187,7 +185,7 @@ mod public_api {
       }
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, PartialOrd, PartialEq)]
     pub enum Sample {
       U08(u8),
       I32(i32),
@@ -231,12 +229,7 @@ mod public_api {
     pub struct Pixel<'d> {
       band_types: &'d [BandType],
       sample_slice: &'d [u8],
-    }
-
-    impl<'d> Pixel<'d> {
-      fn sample(&self, idx: usize) -> Sample {
-        todo!()
-      }
+      nodata_slice: &'d [u8],
     }
 
     pub trait GetPixel<'a, C> {
@@ -256,7 +249,11 @@ mod public_api {
         let sample_slice = &self.data[start..start + slc_len];
         assert_eq!(sample_slice.len(), slc_len);
 
-        let pix = Pixel { band_types: self.bands.as_ref(), sample_slice };
+        let nodata_slice = self.nodata_values.as_ref();
+
+        assert_eq!(nodata_slice.len(), sample_slice.len());
+
+        let pix = Pixel { band_types: self.bands.as_ref(), sample_slice, nodata_slice };
 
         Some(pix)
       }
@@ -279,7 +276,7 @@ mod public_api {
     impl<'a> GetSample<'a> for Pixel<'a> {
       fn get_sample(&'a self, idx: usize) -> Option<Sample> {
         if idx >= self.band_types.len() {
-          None
+          todo!("handle this better perhaps");
         } else {
           let rel_offset =
             self.band_types[..idx].iter().map(|b| usize::from(b.width())).sum::<usize>();
@@ -287,12 +284,28 @@ mod public_api {
           let sample_size = usize::from(band_type.width());
           assert!(self.sample_slice.len() >= rel_offset + sample_size);
 
+          let s_slc = &self.sample_slice[rel_offset..rel_offset + sample_size];
+          let n_slc = &self.nodata_slice[rel_offset..rel_offset + sample_size];
+
+          if s_slc == n_slc {
+            return None;
+          }
+
           match band_type {
-            BandType::U8 => Some(Sample::U08(self.sample_slice[rel_offset])),
+            BandType::U8 => {
+              let arr = s_slc.try_into().expect("slice len should be correct at this point");
+              let value = u8::from_le_bytes(arr);
+              Some(Sample::U08(value))
+            }
             BandType::F32 => {
-              let slc = self.sample_slice[rel_offset..rel_offset + sample_size].try_into().unwrap();
-              let value = f32::from_ne_bytes(slc);
+              let arr = s_slc.try_into().expect("slice len should be correct at this point");
+              let value = f32::from_le_bytes(arr);
               Some(Sample::F32(value))
+            }
+            BandType::I32 => {
+              let arr = s_slc.try_into().expect("slice len should be correct at this point");
+              let value = i32::from_le_bytes(arr);
+              Some(Sample::I32(value))
             }
           }
         }
@@ -312,14 +325,15 @@ mod public_api {
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
     pub enum BandType {
       U8,
+      I32,
       F32,
     }
 
     impl BandType {
       pub fn width(&self) -> Byte {
         match self {
-          BandType::U8 => 1,
-          BandType::F32 => 4,
+          Self::U8 => 1,
+          Self::I32 | Self::F32 => 4,
         }
         .into()
       }
@@ -327,16 +341,13 @@ mod public_api {
   }
 
   mod tiff {
-    use std::{
-      arch::aarch64::vaba_s16,
-      io::{Read, Seek},
-    };
+    use std::io::{Read, Seek};
 
     use super::{Decoded, Error};
     use crate::{
-      decoder::Decoder,
+      decoder::{ifd::Value, Decoder},
       public_api::{band_type::BandType, types::Byte},
-      tags::SampleFormat,
+      tags::{SampleFormat, Tag},
     };
 
     pub type Result<T> = std::result::Result<T, Error>;
@@ -344,6 +355,7 @@ mod public_api {
     pub struct Tiff<R> {
       decoder: Decoder<R>,
       band_types: Vec<BandType>,
+      nodata_value: String,
     }
 
     impl<R> Tiff<R> {
@@ -355,8 +367,9 @@ mod public_api {
         let samples = usize::from(self.decoder.image().samples);
         let bits_per_sample = usize::from(self.decoder.image().bits_per_sample);
 
-        assert!(
-          bits_per_sample % 8 == 0,
+        assert_eq!(
+          bits_per_sample % 8,
+          0,
           "bits per sample is {bits_per_sample}, but can only handle even octets"
         );
 
@@ -369,6 +382,10 @@ mod public_api {
       pub fn band_types(&self) -> &[BandType] {
         self.band_types.as_slice()
       }
+
+      fn nodata_value(&self) -> &str {
+        self.nodata_value.as_str()
+      }
     }
 
     struct CalculatedFetchRegion {
@@ -379,18 +396,10 @@ mod public_api {
     }
 
     impl CalculatedFetchRegion {
-      fn new(t: VerifiedTileCount, origin: (u32, u32), fetch_rect: (u32, u32)) -> Result<Self> {
-        let origin_x = usize::try_from(origin.0).expect("u32 should fit in usize");
-        let origin_y = usize::try_from(origin.1).expect("u32 should fit in usize");
-        let len_x = usize::try_from(fetch_rect.0).expect("u32 should fit in usize");
-        let len_y = usize::try_from(fetch_rect.1).expect("u32 should fit in usize");
-
-        Ok(Self {
-          img_dim: t.img_dim,
-          tile_dim: t.tile_dim,
-          origin: (origin_x, origin_y),
-          fetch_rect: (len_x, len_y),
-        })
+      fn new(
+        t: VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize),
+      ) -> Result<Self> {
+        Ok(Self { img_dim: t.img_dim, tile_dim: t.tile_dim, origin, fetch_rect })
       }
 
       fn fetch_rect(&self) -> (usize, usize) {
@@ -483,12 +492,18 @@ mod public_api {
       R: Read + Seek,
     {
       pub fn new(r: R) -> Result<Self> {
-        let decoder = Decoder::new(r)?;
+        let mut decoder = Decoder::new(r)?;
         let band_types = convert_band_types(&decoder)?;
-        Ok(Self { decoder, band_types })
+
+        let nodata_value = match decoder.get_tag(Tag::GdalNodata)? {
+          Value::Ascii(s) => s,
+          _ => panic!("expected GdalNodata tag to be of type ASCII"),
+        };
+
+        Ok(Self { decoder, band_types, nodata_value })
       }
 
-      pub fn read(&mut self, corner: (u32, u32), size: (u32, u32)) -> Result<Decoded> {
+      pub fn read(&mut self, corner: (usize, usize), size: (usize, usize)) -> Result<Decoded> {
         // TODO: convert into errors
         assert!(size.0 > 0);
         assert!(size.1 > 0);
@@ -503,10 +518,8 @@ mod public_api {
 
         let sample_size = usize::from(self.pixel_width());
 
-        eprintln!("Sample size is {sample_size}");
         let mut result_vec =
           vec![0u8; calculated.rect_width() * calculated.rect_height() * sample_size];
-        eprintln!("Result buffer size is {}", result_vec.len());
 
         let tile_width = calculated.tile_width();
         let tile_height = calculated.tile_height();
@@ -518,17 +531,11 @@ mod public_api {
             let l_right_x = ((calculated.origin_x() + calculated.rect_width()) - tile_src_x_corner)
               .min(tile_width);
 
-            // eprintln!("Tile X corner is at {}; read range is {}..{}", tile_src_x_corner,
-            // tile_src_first_x, l_right_x);
-
             let tile_src_y_corner = absyt * tile_height;
             let tile_src_first_y = calculated.origin_y().saturating_sub(tile_src_y_corner);
             let l_lower_y = ((calculated.origin_y() + calculated.rect_height())
               - tile_src_y_corner)
               .min(tile_height);
-
-            // eprintln!("Tile Y corner is at {}; read range is {}..{}", tile_src_y_corner,
-            // tile_src_first_y, l_lower_y);
 
             let src_first_x = tile_src_x_corner + tile_src_first_x;
             let dst_first_x = src_first_x - calculated.origin_x();
@@ -538,63 +545,58 @@ mod public_api {
             let dst_first_y = src_first_y - calculated.origin_y();
             let dst_lower_y = dst_first_y + (l_lower_y - tile_src_first_y);
 
-            // eprintln!("First 'source X': {src_first_x}");
-            // eprintln!("First 'dest X': {dst_first_x}");
-            // eprintln!("Right 'dest X': {dst_right_x}");
-
-            let src_range_x = (tile_src_first_x..l_right_x);
-            let dst_range_x = (dst_first_x..dst_right_x);
             let src_range_y = (tile_src_first_y..l_lower_y);
             let dst_range_y = (dst_first_y..dst_lower_y);
 
-            assert_eq!(src_range_x.len(), dst_range_x.len());
             assert_eq!(src_range_y.len(), dst_range_y.len());
-
-            // eprintln!("Reading ({tile_src_first_x}, {tile_src_first_y})..({l_right_x},
-            // {l_lower_y}) from tile ({absxt}, {absyt}) into result region ({dst_first_x},
-            // {dst_first_y})..({dst_right_x}, {dst_lower_y})");
 
             let tile_idx = absxt + absyt * calculated.x_tiles();
 
-            let toile_data = self.decoder.read_chunk(tile_idx)?;
-            let bufbuf = toile_data.as_bytes();
+            let _d = self.decoder.read_chunk(tile_idx)?;
+            let source_octet_slice = _d.as_bytes();
 
             let (tile_width, tile_height) = self.decoder.chunk_data_dimensions(tile_idx);
 
-            assert_eq!(bufbuf.len(), tile_width * tile_height * sample_size);
-
-            // eprintln!("READ BUFFER OF {} bytes", bufbuf.len());
+            assert_eq!(source_octet_slice.len(), tile_width * tile_height * sample_size);
 
             for (sy, dy) in src_range_y.clone().zip(dst_range_y.clone()) {
-              for (sx, dx) in src_range_x.clone().zip(dst_range_x.clone()) {
-                let sp = sx + tile_width * sy;
-                let dp = dx + calculated.rect_width() * dy;
-                // eprintln!("{sx},{sy} ({sp}) => {dx},{dy} ({dp})");
+              let sp_start = tile_src_first_x + tile_width * sy;
+              let sp_count = l_right_x - tile_src_first_x;
+              let sp_offset = sp_start * sample_size;
+              let sp_byte_range = sp_offset..sp_offset + (sample_size * sp_count);
 
-                let sp_offset = sample_size * sp;
-                let dp_offset = sample_size * dp;
-                let sp_range = sp_offset..sp_offset + sample_size;
-                let dp_range = dp_offset..dp_offset + sample_size;
+              let dp_start = dst_first_x + calculated.rect_width() * dy;
+              let dp_count = dst_right_x - dst_first_x;
+              let dp_offset = dp_start * sample_size;
+              let dp_byte_range = dp_offset..dp_offset + (sample_size * dp_count);
 
-                assert_eq!(sp_range.len(), dp_range.len());
-
-                // TODO: because handling of "nodata" values is not yet handled etc, fixing this
-                // seems like a lower priority   Note that this seems a bit
-                // wasteful, because it copies adjacent slices:     result_vec[0..
-                // 4].copy_from_slice(&bufbuf[261112..261116])     result_vec[4..8].
-                // copy_from_slice(&bufbuf[261116..261120])     …
-                result_vec[dp_range].copy_from_slice(&bufbuf[sp_range]);
-              }
+              result_vec[dp_byte_range].copy_from_slice(&source_octet_slice[sp_byte_range]);
             }
           }
         }
 
-        // let bands = self.band_types().to_vec().into_boxed_slice();
-        // let data = result_vec.into_boxed_slice();
+        let mut ndv = Vec::with_capacity(usize::from(self.pixel_width()));
+        for band in self.band_types() {
+          let x = match band {
+            BandType::U8 => {
+              let value: u8 = self.nodata_value().parse().unwrap(); // TODO
+              value.to_le_bytes().to_vec()
+            }
+            BandType::F32 => {
+              let value: f32 = self.nodata_value().parse().unwrap(); // TODO
+              value.to_le_bytes().to_vec()
+            }
+            BandType::I32 => {
+              let value: i32 = self.nodata_value().parse().unwrap(); // TODO
+              value.to_le_bytes().to_vec()
+            }
+          };
+          ndv.extend(x);
+        }
+
         let width = calculated.rect_width();
         let height = calculated.rect_height();
-
-        Ok(Decoded::new(self.band_types(), result_vec, width, height))
+        Ok(Decoded::new(self.band_types(), ndv, result_vec, width, height))
       }
     }
 
@@ -651,47 +653,98 @@ mod public_api {
 
   #[cfg(test)]
   mod tests {
-    use std::{fs::File, time::Instant};
+    use std::fs::File;
+    use std::path::PathBuf;
+
+    use rand::{thread_rng, Rng};
+    use crate::public_api::band_type::BandType;
 
     use super::*;
-    use crate::public_api::decoded::{GetPixel, GetSample};
+    use crate::public_api::decoded::{GetPixel, GetSample, Sample};
+    use crate::TEST_IMAGE_DIR;
 
     #[test]
     fn api_example() {
+      let path = PathBuf::from(TEST_IMAGE_DIR).join("tiled-small-i32-known.tiff");
+      let img_file = File::open(path).expect("image should exist");
+      let mut tiff = Tiff::new(img_file).expect("image should be valid");
+
+      assert_eq!((213, 321), tiff.dimensions());
+      assert_eq!(&[BandType::I32], tiff.band_types());
+
+      let slice = tiff.read((10, 10), (20, 30)).unwrap();
+      assert_eq!(10, slice.width());
+      assert_eq!(20, slice.height());
+
+      let sample = slice.get_pixel((5, 5)).get_sample(0).unwrap();
+      assert_eq!(Sample::I32(9015015), sample);
+    }
+
+    #[test]
+    fn e2e_smoke() {
+      // TODO: point this to the "known test file"
       let path = "/Users/perh/Downloads/000_pq4fee8bf1-DSM.tiff";
       let img_file = File::open(path).expect("image should exist");
       let mut tiff = Tiff::new(img_file).expect("image should be valid");
 
       let dimensions = tiff.dimensions();
-
       assert_eq!((8922, 5907), dimensions);
+
+      let mut rng = thread_rng();
+      for _ in 0..10 {
+        let lo_x = rng.gen_range(0..dimensions.0 - 1);
+        let left_x = dimensions.0 - lo_x;
+        let sx = rng.gen_range(1..left_x);
+
+        let lo_y = rng.gen_range(0..dimensions.1 - 1);
+        let left_y = dimensions.1 - lo_y;
+        let sy = rng.gen_range(1..left_y);
+
+        eprintln!("{lo_x}, {lo_y} .. {}, {}", lo_x + sx, lo_y + sy);
+
+        let decoded = tiff.read((lo_x, lo_y), (sx, sy)).unwrap();
+
+        for _ in 0..10 {
+          let rand_x = rng.gen_range(lo_x..lo_x + sx);
+          let rand_y = rng.gen_range(lo_y..lo_y + sy);
+          let rel_x = rand_x - lo_x;
+          let rel_y = rand_y - lo_y;
+
+          eprintln!("Checking random point ABS({rand_x}, {rand_y}) = REL({rel_x}, {rel_y})");
+
+          let maybe_sample = decoded.get_pixel((rel_x, rel_y)).get_sample(0);
+          if rand_x % 3 == 0 && rand_y % 7 == 0 {
+            // If pixel X/Y are evenly 3/7, respectively, expect nodata
+            assert!(maybe_sample.is_none());
+          } else {
+            // else expect sample to be defined and have a specific value
+            let val: i32 = maybe_sample
+              .expect("sample should be defined")
+              .try_into()
+              .expect("sample should be i32");
+            let constant = if rand_x % 4 == 0 { -9_000_000 } else { 9_000_000 };
+            assert_eq!(constant + rand_x as i32 * 1000 + rand_y as i32, val);
+          }
+        }
+      }
+
 
       let band_types = tiff.band_types();
 
       eprintln!("band_types: {band_types:?}");
 
-      let start = Instant::now();
-      let sloice = tiff.read((0, 0), (8922, 5907)).unwrap();
-      let dur = Instant::now() - start;
-
-      eprintln!("It took {dur:?} to read {} pixlurs", sloice.width() * sloice.height());
-
+      let sloice = tiff.read((0, 0), (1000, 1)).unwrap();
       eprintln!("slice dimensions: height={}, width={}", sloice.height(), sloice.width());
 
-      let pixel = sloice.get_pixel((1, 1));
-      eprintln!("pixel: {pixel:?}");
-
-      // let pixel = sloice.get_pixel((7, 3));
-      // let pixel = sloice.get_pixel(899);
-
-      let value = pixel.get_sample(0).expect("I am sure there is one");
-      eprintln!("value: {value:?}");
-
-      todo!("this is where it continues")
-
-      // let value: i32 = value.try_into().expect("know what I am doing");
-
-      // let tile_dim = decoder.tile_dimensions();
+      for y in 0..sloice.height() {
+        for x in 0..sloice.width() {
+          if let Some(sample) = sloice.get_pixel((x, y)).get_sample(0) {
+            let val: f32 = sample.try_into().unwrap();
+            eprintln!("woot: {x}, {y} => {val:?}");
+            break;
+          }
+        }
+      }
     }
   }
 }
