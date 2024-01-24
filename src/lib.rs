@@ -653,15 +653,18 @@ mod public_api {
 
   #[cfg(test)]
   mod tests {
-    use std::fs::File;
-    use std::path::PathBuf;
+    use std::{fs::File, path::PathBuf};
 
     use rand::{thread_rng, Rng};
-    use crate::public_api::band_type::BandType;
 
     use super::*;
-    use crate::public_api::decoded::{GetPixel, GetSample, Sample};
-    use crate::TEST_IMAGE_DIR;
+    use crate::{
+      public_api::{
+        band_type::BandType,
+        decoded::{GetPixel, GetSample, Sample},
+      },
+      TEST_IMAGE_DIR,
+    };
 
     #[test]
     fn api_example() {
@@ -727,7 +730,6 @@ mod public_api {
           }
         }
       }
-
 
       let band_types = tiff.band_types();
 
