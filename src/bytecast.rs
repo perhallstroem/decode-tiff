@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 //! Trivial, internal byte transmutation.
 //!
 //! A dependency like bytemuck would give us extra assurance of the safety but overall would not
@@ -15,11 +17,11 @@ use std::{mem, slice};
 macro_rules! integral_slice_as_bytes{($int:ty, $const:ident $(,$mut:ident)*) => {
     pub(crate) fn $const(slice: &[$int]) -> &[u8] {
         assert!(mem::align_of::<$int>() <= mem::size_of::<$int>());
-        unsafe { slice::from_raw_parts(slice.as_ptr() as *const u8, mem::size_of_val(slice)) }
+        unsafe { slice::from_raw_parts(slice.as_ptr().cast::<u8>(), mem::size_of_val(slice)) }
     }
     $(pub(crate) fn $mut(slice: &mut [$int]) -> &mut [u8] {
         assert!(mem::align_of::<$int>() <= mem::size_of::<$int>());
-        unsafe { slice::from_raw_parts_mut(slice.as_mut_ptr() as *mut u8, mem::size_of_val(slice)) }
+        unsafe { slice::from_raw_parts_mut(slice.as_mut_ptr().cast::<u8>(), mem::size_of_val(slice)) }
     })*
 }}
 

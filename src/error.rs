@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, io, str, string};
 
 use crate::{
-  decoder::{ifd::Value},
+  decoder::ifd::Value,
   tags::{CompressionMethod, SampleFormat, Tag},
   weezl::LzwError,
 };
@@ -61,7 +61,7 @@ pub enum TiffFormatError {
 impl Error for TiffFormatError {}
 
 impl fmt::Display for TiffFormatError {
-  fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+  fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
     use self::TiffFormatError::*;
     match *self {
       TiffSignatureNotFound => write!(fmt, "TIFF signature not found."),
@@ -133,7 +133,7 @@ pub enum TiffUnsupportedError {
 impl Error for TiffUnsupportedError {}
 
 impl fmt::Display for TiffUnsupportedError {
-  fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+  fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
     use self::TiffUnsupportedError::*;
     match *self {
       FloatingPointPredictor => {
@@ -162,7 +162,7 @@ impl fmt::Display for TiffUnsupportedError {
 }
 
 impl fmt::Display for TiffError {
-  fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+  fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
     match *self {
       TiffError::FormatError(ref e) => write!(fmt, "Format error: {}", e),
       TiffError::UnsupportedError(ref f) => write!(

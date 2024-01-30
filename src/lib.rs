@@ -1,70 +1,62 @@
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//
-// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-// forbid unused `Result`s etc
-#![forbid(unused_must_use)]
-// do not disallow identifiers like "max_𝜀"
-#![allow(uncommon_codepoints)]
-#![warn(rust_2018_idioms)]
-#![warn(rust_2021_compatibility)]
-//
-// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Clippy ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-#![warn(clippy::pedantic)]
-#![warn(clippy::missing_docs_in_private_items)]
-#![allow(clippy::must_use_candidate)]
-// instead use expect() to provide rationale
-#![warn(clippy::unwrap_used)]
-// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustdoc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
-//
-// Documentation is primarily for contributors, so allowing links to private items is a must.
-#![allow(rustdoc::private_intra_doc_links)]
-//
-// Broken links are quickly fixed if caught immediately, so just deny them
-#![forbid(rustdoc::broken_intra_doc_links)]
-//
-// Do not allow invalid/empty code blocks. Code blocks are meant to look like this:
-//
-//   ┆
-//   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …
-//   ┆ /// ```
-//   ┆ ///   inside.is(code);
-//   ┆ /// ```
-//   ┆ /// The documentation may, or may not, continue down here.
-//   ┆
-//
-// If the newline is omitted, the code will be neither formatted nor executed:
-//
-//   ┆
-//   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …```
-//   ┆ ///   inside.is(code);
-//   ┆ /// ```
-//   ┆ /// The documentation may, or may not, continue down here.
-//   ┆
-//
-// Hence the rule.
-#![deny(rustdoc::invalid_rust_codeblocks)]
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-pub use weezl;
-
-#[cfg(test)]
-use std::{fs::File, path::PathBuf};
-
-pub use self::error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError};
-#[cfg(test)]
-use crate::{
-  decoder::{ifd::Value, Decoder, DecodingResult},
-  tags::Tag,
-};
+use weezl;
+mod decoder;
+mod tags;
 
 mod bytecast;
-pub mod decoder;
 mod error;
-pub mod tags;
 
-const TEST_IMAGE_DIR: &str = "./tests/images";
+use error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError};
 
 mod public_api {
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  //
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustc
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ forbid unused
+  // `Result`s etc
+  #![forbid(unused_must_use)]
+  // do not disallow identifiers like "max_𝜀"
+  #![allow(uncommon_codepoints)]
+  #![warn(rust_2018_idioms)]
+  #![warn(rust_2021_compatibility)]
+  //
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Clippy
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  #![warn(clippy::pedantic)]
+  #![warn(clippy::missing_docs_in_private_items)]
+  #![allow(clippy::must_use_candidate)]
+  // instead use expect() to provide rationale
+  #![warn(clippy::unwrap_used)]
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustdoc
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  //
+  // Documentation is primarily for contributors, so allowing links to private items is a must.
+  #![allow(rustdoc::private_intra_doc_links)]
+  //
+  // Broken links are quickly fixed if caught immediately, so just deny them
+  #![forbid(rustdoc::broken_intra_doc_links)]
+  //
+  // Do not allow invalid/empty code blocks. Code blocks are meant to look like this:
+  //
+  //   ┆
+  //   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …
+  //   ┆ /// ```
+  //   ┆ ///   inside.is(code);
+  //   ┆ /// ```
+  //   ┆ /// The documentation may, or may not, continue down here.
+  //   ┆
+  //
+  // If the newline is omitted, the code will be neither formatted nor executed:
+  //
+  //   ┆
+  //   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …```
+  //   ┆ ///   inside.is(code);
+  //   ┆ /// ```
+  //   ┆ /// The documentation may, or may not, continue down here.
+  //   ┆
+  //
+  // Hence the rule.
+  #![deny(rustdoc::invalid_rust_codeblocks)]
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   pub use decoded::Decoded;
   pub use error::Error;
   pub use tiff::Tiff;
@@ -73,7 +65,7 @@ mod public_api {
   mod error {
     use std::fmt::{Display, Formatter};
 
-    use crate::TiffError;
+    use crate::error::TiffError;
 
     type BoxedError = Box<dyn std::error::Error>;
 
@@ -97,7 +89,7 @@ mod public_api {
           Error::UnsupportedBandType { format, bit_width } => {
             write!(f, "unsupported {bit_width}-bit band type {format}")
           }
-          Error::UsageError(str) => write!(f, "usage error: {str}")
+          Error::UsageError(str) => write!(f, "usage error: {str}"),
         }
       }
     }
@@ -117,8 +109,10 @@ mod public_api {
   }
 
   pub mod types {
-    use std::fmt::{Display, Formatter};
-    use std::ops::Add;
+    use std::{
+      fmt::{Display, Formatter},
+      ops::Add,
+    };
 
     macro_rules! impl_numeric_newtype {
       ($name:ident, $t:ty ) => {
@@ -171,9 +165,10 @@ mod public_api {
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
     pub struct Rectangle {
       corner: Origin,
-      size: Size
+      size: Size,
     }
 
+    #[allow(dead_code)]
     impl Rectangle {
       pub fn corner(&self) -> Origin {
         self.corner
@@ -183,10 +178,21 @@ mod public_api {
         self.size
       }
 
-      pub fn corner_x(&self) -> usize { self.corner.x() }
-      pub fn corner_y(&self) -> usize { self.corner.y() }
-      pub fn width(&self) -> usize { self.size.width() }
-      pub fn height(&self) -> usize { self.size.height() }
+      pub fn corner_x(&self) -> usize {
+        self.corner.x()
+      }
+
+      pub fn corner_y(&self) -> usize {
+        self.corner.y()
+      }
+
+      pub fn width(&self) -> usize {
+        self.size.width()
+      }
+
+      pub fn height(&self) -> usize {
+        self.size.height()
+      }
     }
 
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
@@ -196,13 +202,23 @@ mod public_api {
     pub struct Size((usize, usize));
 
     impl Origin {
-      fn x(&self) -> usize { self.0.0 }
-      fn y(&self) -> usize { self.0.1 }
+      fn x(&self) -> usize {
+        self.0 .0
+      }
+
+      fn y(&self) -> usize {
+        self.0 .1
+      }
     }
 
     impl Size {
-      fn width(&self) -> usize { self.0.0 }
-      fn height(&self) -> usize { self.0.1 }
+      fn width(&self) -> usize {
+        self.0 .0
+      }
+
+      fn height(&self) -> usize {
+        self.0 .1
+      }
     }
 
     impl From<(usize, usize)> for Origin {
@@ -219,10 +235,7 @@ mod public_api {
 
     impl From<(Origin, Size)> for Rectangle {
       fn from(value: (Origin, Size)) -> Self {
-        Rectangle {
-          corner: value.0,
-          size: value.1,
-        }
+        Rectangle { corner: value.0, size: value.1 }
       }
     }
 
@@ -254,23 +267,18 @@ mod public_api {
   }
 
   mod decoded {
-    use std::iter::{FilterMap, FlatMap};
-    use std::marker::PhantomData;
-    use std::ops::Range;
-    use crate::public_api::{band_type::BandType, Rectangle, types::Byte};
+    use crate::public_api::{band_type::BandType, types::Byte, Rectangle};
 
     pub struct Decoded {
       bands: Box<[BandType]>,
       data: Box<[u8]>,
       nodata_values: Box<[u8]>,
       pixel_len: Byte,
-      rectangle: Rectangle
+      rectangle: Rectangle,
     }
 
     impl Decoded {
-      pub(crate) fn new<B, N, D>(
-        bands: B, nodata_values: N, data: D, rect: Rectangle
-      ) -> Self
+      pub(crate) fn new<B, N, D>(bands: B, nodata_values: N, data: D, rect: Rectangle) -> Self
       where
         B: Into<Box<[BandType]>>,
         N: Into<Box<[u8]>>,
@@ -283,7 +291,13 @@ mod public_api {
         assert_eq!(nodata_values.len(), pixel_len.into());
         assert_eq!(data.len(), width * height * pixel_len);
 
-        Self { bands, data, nodata_values, pixel_len: pixel_len.into(), rectangle: rect }
+        Self {
+          bands,
+          data,
+          nodata_values,
+          pixel_len: pixel_len.into(),
+          rectangle: rect,
+        }
       }
 
       pub fn rectangle(&self) -> Rectangle {
@@ -298,14 +312,16 @@ mod public_api {
         self.rectangle().height()
       }
 
-      pub fn pixels(&self) -> impl Iterator<Item=((usize, usize), Pixel<'_>)> {
-          (0..self.height()).flat_map(move |rel_y| {
-            (0..self.width()).filter_map(move |rel_x| self.get_pixel((rel_x, rel_y)).map(|p| {
+      pub fn pixels(&self) -> impl Iterator<Item = ((usize, usize), Pixel<'_>)> {
+        (0..self.height()).flat_map(move |rel_y| {
+          (0..self.width()).filter_map(move |rel_x| {
+            self.get_pixel((rel_x, rel_y)).map(|p| {
               let abs_x = rel_x + self.rectangle().corner_x();
               let abs_y = rel_y + self.rectangle().corner_y();
               ((abs_x, abs_y), p)
-            }))
+            })
           })
+        })
       }
     }
 
@@ -470,10 +486,12 @@ mod public_api {
     use super::{Decoded, Error};
     use crate::{
       decoder::{ifd::Value, Decoder},
-      public_api::{band_type::BandType, types::Byte},
+      public_api::{
+        band_type::BandType,
+        types::{Byte, Origin, Size},
+      },
       tags::{SampleFormat, Tag},
     };
-    use crate::public_api::types::{Origin, Size};
 
     pub type Result<T> = std::result::Result<T, Error>;
 
@@ -520,6 +538,7 @@ mod public_api {
       fetch_rect: (usize, usize),
     }
 
+    #[allow(dead_code)]
     impl CalculatedFetchRegion {
       fn new(
         t: VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize),
@@ -635,12 +654,17 @@ mod public_api {
 
         let (dx, dy) = self.dimensions();
         if corner.0 + size.0 >= dx {
-          return Err(Error::UsageError(format!("image X dimension {dx} < requested {}", corner.0+size.0)));
+          return Err(Error::UsageError(format!(
+            "image X dimension {dx} < requested {}",
+            corner.0 + size.0
+          )));
         }
         if corner.1 + size.1 >= dy {
-          return Err(Error::UsageError(format!("image Y dimension {dy} < requested {}", corner.1+size.1)));
+          return Err(Error::UsageError(format!(
+            "image Y dimension {dy} < requested {}",
+            corner.1 + size.1
+          )));
         }
-
 
         let verified = VerifiedTileCount::new(
           self.dimensions(),
@@ -679,8 +703,8 @@ mod public_api {
             let dst_first_y = src_first_y - calculated.origin_y();
             let dst_lower_y = dst_first_y + (l_lower_y - tile_src_first_y);
 
-            let src_range_y = (tile_src_first_y..l_lower_y);
-            let dst_range_y = (dst_first_y..dst_lower_y);
+            let src_range_y = tile_src_first_y..l_lower_y;
+            let dst_range_y = dst_first_y..dst_lower_y;
 
             assert_eq!(src_range_y.len(), dst_range_y.len());
 
@@ -790,19 +814,14 @@ mod public_api {
 
   #[cfg(test)]
   mod tests {
-    use std::{fs::File, path::PathBuf};
-    use std::ops::Neg;
+    use std::{fs::File, ops::Neg, path::PathBuf};
 
     use rand::{thread_rng, Rng};
 
     use super::*;
-    use crate::{
-      public_api::{
-        band_type::BandType,
-        decoded::{GetPixel, GetSample, Sample},
-      },
-      TEST_IMAGE_DIR,
-    };
+    use crate::public_api::decoded::{GetPixel, GetSample};
+
+    const TEST_IMAGE_DIR: &str = "./tests/images";
 
     #[test]
     fn api_example() {
@@ -813,11 +832,11 @@ mod public_api {
       let region = tiff.read((10, 10), (5, 5)).unwrap();
 
       // There are 25 pixels in the read region
-      let pixels : Vec<_> = region.pixels().collect();
+      let pixels: Vec<_> = region.pixels().collect();
       assert_eq!(25, pixels.len());
 
       // 20 of the pixels have a defined sample(0); the others are undefined (nodata)
-      let samples : Vec<_> = region.pixels().filter_map(|(_, pixel)| pixel.get_sample(0)).collect();
+      let samples: Vec<_> = region.pixels().filter_map(|(_, pixel)| pixel.get_sample(0)).collect();
       assert_eq!(20, samples.len());
     }
 
@@ -869,107 +888,5 @@ mod public_api {
         }
       }
     }
-
-  }
-}
-
-#[ignore]
-#[test]
-fn example() {
-  let path = PathBuf::from(TEST_IMAGE_DIR).join("tiled-rect-rgb-u8.tif");
-  let img_file = File::open(path).expect("Cannot find test image!");
-  let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-  assert_eq!(decoder.dimensions(), (490, 367));
-
-  let tile_count = decoder.tile_count();
-  assert_eq!(48, tile_count);
-
-  for t in 0..tile_count {
-    let tile = decoder.read_chunk(t).unwrap();
-    let dim = decoder.chunk_data_dimensions(t);
-    assert_eq!((32, 128), dim);
-
-    let pixels = decoder.read_chunk(t).unwrap();
-
-    match pixels {
-      DecodingResult::U8(bytes) => {
-        assert_eq!(4096, bytes.len());
-      }
-      _ => panic!("not the expected type"),
-    }
-  }
-}
-
-#[ignore]
-#[test]
-fn example2() {
-  let path = PathBuf::from("/Users/perh/Downloads/000_pq4fee8bf1-DSM.tiff");
-  let img_file = File::open(path).expect("Cannot find test image!");
-  let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-
-  let dim = decoder.dimensions();
-  eprintln!("dimensions: {dim:?}");
-
-  let tiles = decoder.tile_count();
-
-  let tag = decoder.get_tag(Tag::GdalNodata).unwrap();
-  let tag = match tag {
-    Value::Ascii(s) => s,
-    _ => panic!("expected GdalNodata tag to be of type ASCII"),
-  };
-
-  for t in 0..tiles {
-    let tile = decoder.read_chunk(t).unwrap();
-    let dim = decoder.chunk_data_dimensions(t);
-
-    match tile {
-      DecodingResult::F32(x) => {
-        let no_data: f32 = tag.parse().unwrap();
-
-        let c_data = x.iter().filter(|value| **value != no_data).count();
-        let c_no = x.len() - c_data;
-
-        eprintln!("T{t:03} decoding result of type F32, width {dim:?} len {} (nodata {c_no}, data {c_data})", x.len());
-      }
-      _ => panic!("only handling F32 for now"),
-    }
-    // break;
-  }
-}
-
-#[ignore]
-#[test]
-fn example3() {
-  let path = PathBuf::from("/Users/perh/Downloads/001_pq36e2a169-ortho.tiff");
-  let img_file = File::open(path).expect("Cannot find test image!");
-  let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
-
-  let dim = decoder.dimensions();
-  eprintln!("dimensions: {dim:?}");
-
-  let tiles = decoder.tile_count();
-
-  let tag = decoder.get_tag(Tag::GdalNodata).unwrap();
-  let tag = match tag {
-    Value::Ascii(s) => s,
-    _ => panic!("expected GdalNodata tag to be of type ASCII"),
-  };
-
-  for t in 0..tiles {
-    let tile = decoder.read_chunk(t).unwrap();
-    let dim = decoder.chunk_data_dimensions(t);
-
-    match tile {
-      DecodingResult::F32(x) => {
-        let no_data: f32 = tag.parse().unwrap();
-
-        let c_data = x.iter().filter(|value| **value != no_data).count();
-        let c_no = x.len() - c_data;
-
-        eprintln!("T{t:03} decoding result of type F32, width {dim:?} len {} (nodata {c_no}, data {c_data})", x.len());
-      }
-      _ => panic!("only handling F32 for now"),
-    }
-    // break;
   }
 }

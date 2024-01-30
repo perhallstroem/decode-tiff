@@ -15,7 +15,7 @@ use crate::{
   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// Computed values useful for tile decoding
 pub(crate) struct TileAttributes {
   pub image_width: usize,
@@ -23,12 +23,6 @@ pub(crate) struct TileAttributes {
 
   pub tile_width: usize,
   pub tile_length: usize,
-}
-
-impl Default for TileAttributes {
-  fn default() -> Self {
-    Self { image_width: 0, image_height: 0, tile_width: 0, tile_length: 0 }
-  }
 }
 
 impl TileAttributes {
@@ -256,7 +250,7 @@ impl Image {
   }
 
   pub(crate) fn expand_chunk(
-    &self, reader: impl Read, mut buffer: DecodingBuffer, output_width: usize,
+    &self, reader: impl Read, mut buffer: DecodingBuffer<'_>, output_width: usize,
     byte_order: ByteOrder, chunk_index: usize, limits: &Limits,
   ) -> TiffResult<()> {
     // Validate that the predictor is supported for the sample type.
@@ -275,7 +269,7 @@ impl Image {
 
     let compressed_bytes = self
       .chunk_bytes
-      .get(chunk_index as usize)
+      .get(chunk_index)
       .ok_or(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered))?;
     if *compressed_bytes > limits.intermediate_buffer_size as u64 {
       return Err(TiffError::LimitsExceeded);
@@ -293,12 +287,12 @@ impl Image {
 
     let mut reader = Self::create_reader(reader, compression_method, *compressed_bytes)?;
 
-    if output_width == data_dims.0 as usize && padding_right == 0 {
-      let total_samples = data_dims.0 as usize * data_dims.1 as usize * samples;
+    if output_width == data_dims.0 && padding_right == 0 {
+      let total_samples = data_dims.0 * data_dims.1 * samples;
       let tile = &mut buffer.as_bytes_mut()[..total_samples * byte_len];
       reader.read_exact(tile)?;
 
-      for row in 0..data_dims.1 as usize {
+      for row in 0..data_dims.1 {
         let row_start = row * output_width * samples;
         let row_end = (row + 1) * output_width * samples;
         let row = buffer.subrange(row_start..row_end);
@@ -307,11 +301,11 @@ impl Image {
     } else if padding_right > 0 && self.predictor == Predictor::FloatingPoint {
       // The floating point predictor shuffles the padding bytes into the encoded output, so
       // this case is handled specially when needed.
-      let mut encoded = vec![0u8; chunk_dims.0 as usize * samples * byte_len];
+      let mut encoded = vec![0u8; chunk_dims.0 * samples * byte_len];
 
-      for row in 0..data_dims.1 as usize {
+      for row in 0..data_dims.1 {
         let row_start = row * output_width * samples;
-        let row_end = row_start + data_dims.0 as usize * samples;
+        let row_end = row_start + data_dims.0 * samples;
 
         reader.read_exact(&mut encoded)?;
         match buffer.subrange(row_start..row_end) {
@@ -321,16 +315,16 @@ impl Image {
         }
       }
     } else {
-      for row in 0..data_dims.1 as usize {
+      for row in 0..data_dims.1 {
         let row_start = row * output_width * samples;
-        let row_end = row_start + data_dims.0 as usize * samples;
+        let row_end = row_start + data_dims.0 * samples;
 
         let row = &mut buffer.as_bytes_mut()[(row_start * byte_len)..(row_end * byte_len)];
         reader.read_exact(row)?;
 
         // Skip horizontal padding
         if padding_right > 0 {
-          let len = u64::try_from(padding_right as usize * samples * byte_len)?;
+          let len = u64::try_from(padding_right * samples * byte_len)?;
           io::copy(&mut reader.by_ref().take(len), &mut io::sink())?;
         }
 

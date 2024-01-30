@@ -1,3 +1,5 @@
+#![allow(clippy)]
+
 use std::{
   collections::{HashMap, HashSet},
   convert::TryFrom,
@@ -12,7 +14,7 @@ use self::{
 };
 use crate::{
   bytecast,
-  decoder::image::TileAttributes,
+  decoder::{ifd::Value, image::TileAttributes},
   tags::{CompressionMethod, Predictor, SampleFormat, Tag, Type},
   TiffError, TiffFormatError, TiffResult, TiffUnsupportedError,
 };
@@ -128,7 +130,7 @@ impl DecodingResult {
     }
   }
 
-  pub fn as_buffer(&mut self, start: usize) -> DecodingBuffer {
+  pub fn as_buffer(&mut self, start: usize) -> DecodingBuffer<'_> {
     match *self {
       DecodingResult::U8(ref mut buf) => DecodingBuffer::U8(&mut buf[start..]),
       DecodingResult::U16(ref mut buf) => DecodingBuffer::U16(&mut buf[start..]),
@@ -259,6 +261,7 @@ pub enum ChunkType {
 
 /// Decoding limits
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Limits {
   /// The maximum size of any `DecodingResult` in bytes, the default is
   /// 256MiB. If the entire image is decoded at once, then this will
@@ -271,10 +274,6 @@ pub struct Limits {
   /// Maximum size for intermediate buffer which may be used to limit the amount of data read per
   /// segment even if the entire image is decoded at once.
   pub intermediate_buffer_size: usize,
-  /// The purpose of this is to prevent all the fields of the struct from
-  /// being public, as this would make adding new fields a major version
-  /// bump.
-  _non_exhaustive: (),
 }
 
 impl Limits {
@@ -290,7 +289,6 @@ impl Limits {
       decoding_buffer_size: usize::max_value(),
       ifd_value_size: usize::max_value(),
       intermediate_buffer_size: usize::max_value(),
-      _non_exhaustive: (),
     }
   }
 }
@@ -301,7 +299,6 @@ impl Default for Limits {
       decoding_buffer_size: 256 * 1024 * 1024,
       intermediate_buffer_size: 128 * 1024 * 1024,
       ifd_value_size: 1024 * 1024,
-      _non_exhaustive: (),
     }
   }
 }
@@ -407,7 +404,7 @@ pub fn fp_predict_f64(input: &mut [u8], output: &mut [f64], samples: usize) {
 }
 
 fn fix_endianness_and_predict(
-  mut image: DecodingBuffer, samples: usize, byte_order: ByteOrder, predictor: Predictor,
+  mut image: DecodingBuffer<'_>, samples: usize, byte_order: ByteOrder, predictor: Predictor,
 ) {
   match predictor {
     Predictor::None => {
@@ -441,7 +438,7 @@ fn fix_endianness_and_predict(
 }
 
 /// Fix endianness. If `byte_order` matches the host, then conversion is a no-op.
-fn fix_endianness(buf: &mut DecodingBuffer, byte_order: ByteOrder) {
+fn fix_endianness(buf: &mut DecodingBuffer<'_>, byte_order: ByteOrder) {
   match byte_order {
     ByteOrder::LittleEndian => match buf {
       DecodingBuffer::U8(_) | DecodingBuffer::I8(_) => {}
@@ -676,15 +673,15 @@ impl<R: Read + Seek> Decoder<R> {
     reader: &mut SmartReader<R>, bigtiff: bool,
   ) -> TiffResult<Option<(Tag, ifd::Entry)>> {
     let tag = Tag::from_u16_exhaustive(reader.read_u16()?);
-    let type_ = match Type::from_u16(reader.read_u16()?) {
-      Some(t) => t,
-      None => {
-        // Unknown type. Skip this entry according to spec.
-        reader.read_u32()?;
-        reader.read_u32()?;
-        return Ok(None);
-      }
+    let type_ = if let Some(t) = Type::from_u16(reader.read_u16()?) {
+      t
+    } else {
+      // Unknown type. Skip this entry according to spec.
+      reader.read_u32()?;
+      reader.read_u32()?;
+      return Ok(None);
     };
+
     let entry = if bigtiff {
       let mut offset = [0; 8];
 
@@ -745,7 +742,7 @@ impl<R: Read + Seek> Decoder<R> {
   pub fn find_tag_unsigned<T: TryFrom<u64>>(&mut self, tag: Tag) -> TiffResult<Option<T>> {
     self
       .find_tag(tag)?
-      .map(|v| v.into_u64())
+      .map(Value::into_u64)
       .transpose()?
       .map(|value| T::try_from(value).map_err(|_| TiffFormatError::InvalidTagValueType(tag).into()))
       .transpose()
@@ -756,7 +753,7 @@ impl<R: Read + Seek> Decoder<R> {
   pub fn find_tag_unsigned_vec<T: TryFrom<u64>>(&mut self, tag: Tag) -> TiffResult<Option<Vec<T>>> {
     self
       .find_tag(tag)?
-      .map(|v| v.into_u64_vec())
+      .map(Value::into_u64_vec)
       .transpose()?
       .map(|v| {
         v.into_iter()
@@ -789,7 +786,7 @@ impl<R: Read + Seek> Decoder<R> {
   }
 
   pub fn read_chunk_to_buffer(
-    &mut self, mut buffer: DecodingBuffer, chunk_index: usize, output_width: usize,
+    &mut self, mut buffer: DecodingBuffer<'_>, chunk_index: usize, output_width: usize,
   ) -> TiffResult<()> {
     let offset = self.image.chunk_file_range(chunk_index)?.0;
     self.goto_offset_u64(offset)?;
@@ -845,9 +842,9 @@ impl<R: Read + Seek> Decoder<R> {
   pub fn read_chunk(&mut self, chunk_index: usize) -> TiffResult<DecodingResult> {
     let data_dims = self.image().chunk_data_dimensions(chunk_index);
 
-    let mut result = self.result_buffer(data_dims.0 as usize, data_dims.1 as usize)?;
+    let mut result = self.result_buffer(data_dims.0, data_dims.1)?;
 
-    self.read_chunk_to_buffer(result.as_buffer(0), chunk_index, data_dims.0 as usize)?;
+    self.read_chunk_to_buffer(result.as_buffer(0), chunk_index, data_dims.0)?;
 
     Ok(result)
   }
@@ -885,8 +882,8 @@ impl<R: Read + Seek> Decoder<R> {
       return Err(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered));
     }
 
-    let chunks_across = ((width - 1) / chunk_dimensions.0 + 1) as usize;
-    let strip_samples = width as usize * chunk_dimensions.1 as usize * samples;
+    let chunks_across = (width - 1) / chunk_dimensions.0 + 1;
+    let strip_samples = width * chunk_dimensions.1 * samples;
 
     let image_chunks = self.image().chunk_offsets.len();
     // For multi-band images, only the first band is read.
@@ -898,12 +895,12 @@ impl<R: Read + Seek> Decoder<R> {
 
       let x = chunk % chunks_across;
       let y = chunk / chunks_across;
-      let buffer_offset = y * strip_samples + x * chunk_dimensions.0 as usize * samples;
+      let buffer_offset = y * strip_samples + x * chunk_dimensions.0 * samples;
       let byte_order = self.reader.byte_order;
       self.image.expand_chunk(
         &mut self.reader,
         result.as_buffer(buffer_offset).copy(),
-        width as usize,
+        width,
         byte_order,
         chunk,
         &self.limits,

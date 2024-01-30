@@ -81,13 +81,13 @@ fn test_tiled_incremental() {
   let mut decoder = Decoder::new(img_file).expect("Cannot create decoder");
 
   let tiles = decoder.tile_count();
-  assert_eq!(tiles as usize, sums.len());
+  assert_eq!({ tiles }, sums.len());
 
   for tile in 0..tiles {
     match decoder.read_chunk(tile).unwrap() {
       DecodingResult::U8(res) => {
         let sum: u64 = res.into_iter().map(<u64>::from).sum();
-        assert_eq!(sum, sums[tile as usize]);
+        assert_eq!(sum, sums[tile]);
       }
       _ => panic!("Wrong bit depth"),
     }

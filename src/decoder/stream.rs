@@ -20,7 +20,7 @@ pub trait EndianReader: Read {
   fn byte_order(&self) -> ByteOrder;
 
   /// Reads an u16
-  #[inline(always)]
+
   fn read_u16(&mut self) -> Result<u16, io::Error> {
     let mut n = [0u8; 2];
     self.read_exact(&mut n)?;
@@ -31,7 +31,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an i8
-  #[inline(always)]
+
   fn read_i8(&mut self) -> Result<i8, io::Error> {
     let mut n = [0u8; 1];
     self.read_exact(&mut n)?;
@@ -42,7 +42,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an i16
-  #[inline(always)]
+
   fn read_i16(&mut self) -> Result<i16, io::Error> {
     let mut n = [0u8; 2];
     self.read_exact(&mut n)?;
@@ -53,7 +53,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an u32
-  #[inline(always)]
+
   fn read_u32(&mut self) -> Result<u32, io::Error> {
     let mut n = [0u8; 4];
     self.read_exact(&mut n)?;
@@ -64,7 +64,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an i32
-  #[inline(always)]
+
   fn read_i32(&mut self) -> Result<i32, io::Error> {
     let mut n = [0u8; 4];
     self.read_exact(&mut n)?;
@@ -75,7 +75,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an u64
-  #[inline(always)]
+
   fn read_u64(&mut self) -> Result<u64, io::Error> {
     let mut n = [0u8; 8];
     self.read_exact(&mut n)?;
@@ -86,7 +86,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an i64
-  #[inline(always)]
+
   fn read_i64(&mut self) -> Result<i64, io::Error> {
     let mut n = [0u8; 8];
     self.read_exact(&mut n)?;
@@ -97,7 +97,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an f32
-  #[inline(always)]
+
   fn read_f32(&mut self) -> Result<f32, io::Error> {
     let mut n = [0u8; 4];
     self.read_exact(&mut n)?;
@@ -108,7 +108,7 @@ pub trait EndianReader: Read {
   }
 
   /// Reads an f64
-  #[inline(always)]
+
   fn read_f64(&mut self) -> Result<f64, io::Error> {
     let mut n = [0u8; 8];
     self.read_exact(&mut n)?;
@@ -206,7 +206,6 @@ impl<R> EndianReader for SmartReader<R>
 where
   R: Read,
 {
-  #[inline(always)]
   fn byte_order(&self) -> ByteOrder {
     self.byte_order
   }
