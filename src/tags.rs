@@ -41,20 +41,20 @@ macro_rules! tags {
     // For u16 tags, provide direct inherent primitive conversion methods.
     ($name:tt, u16, $($unknown_doc:literal)*) => {
         impl $name {
-            #[inline(always)]
+            #[allow(dead_code)]
             pub fn from_u16(val: u16) -> Option<Self> {
                 Self::__from_inner_type(val).ok()
             }
 
             $(
-            #[inline(always)]
+            #[allow(dead_code)]
             pub fn from_u16_exhaustive(val: u16) -> Self {
                 $unknown_doc;
                 Self::__from_inner_type(val).unwrap_or_else(|_| $name::Unknown(val))
             }
             )*
 
-            #[inline(always)]
+            #[allow(dead_code)]
             pub fn to_u16(&self) -> u16 {
                 Self::__to_inner_type(self)
             }
@@ -190,15 +190,6 @@ pub enum Predictor(u16) {
     None = 1,
     Horizontal = 2,
     FloatingPoint = 3,
-}
-}
-
-tags! {
-/// Type to represent resolution units
-pub enum ResolutionUnit(u16) {
-    None = 1,
-    Inch = 2,
-    Centimeter = 3,
 }
 }
 

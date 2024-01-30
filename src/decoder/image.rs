@@ -228,7 +228,7 @@ impl Image {
 
     let compressed_bytes = self
       .chunk_bytes
-      .get(chunk as usize)
+      .get(chunk)
       .ok_or(TiffError::FormatError(TiffFormatError::InconsistentSizesEncountered))?;
 
     Ok((*file_offset, *compressed_bytes))

@@ -1,33 +1,33 @@
-use weezl;
-mod decoder;
+#![allow(clippy::all)]
+
+pub mod decoder;
 mod tags;
 
 mod bytecast;
 mod error;
 
 use error::{TiffError, TiffFormatError, TiffResult, TiffUnsupportedError};
+pub use public_api::{Error, GetPixel, GetSample, Tiff};
+
+pub const TEST_IMAGE_DIR: &str = "./tests/images";
 
 mod public_api {
+
+  //! The limited public API, wrapping the less-ergonomic [`decoder`][crate::decoder]
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   //
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustc
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ forbid unused
-  // `Result`s etc
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  // forbid unused `Result`s etc
   #![forbid(unused_must_use)]
-  // do not disallow identifiers like "max_𝜀"
-  #![allow(uncommon_codepoints)]
-  #![warn(rust_2018_idioms)]
-  #![warn(rust_2021_compatibility)]
   //
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Clippy
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Clippy ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
   #![warn(clippy::pedantic)]
   #![warn(clippy::missing_docs_in_private_items)]
   #![allow(clippy::must_use_candidate)]
   // instead use expect() to provide rationale
   #![warn(clippy::unwrap_used)]
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustdoc
-  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+  // ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustdoc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
   //
   // Documentation is primarily for contributors, so allowing links to private items is a must.
   #![allow(rustdoc::private_intra_doc_links)]
@@ -57,26 +57,38 @@ mod public_api {
   // Hence the rule.
   #![deny(rustdoc::invalid_rust_codeblocks)]
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  pub use decoded::Decoded;
+  pub use decoded::{Decoded, GetPixel, GetSample};
   pub use error::Error;
   pub use tiff::Tiff;
   pub use types::Rectangle;
 
   mod error {
+    //! The [`Error`] type and its implementations
+
     use std::fmt::{Display, Formatter};
 
     use crate::error::TiffError;
 
+    /// Convenience alias for arbitrary boxed errors
     type BoxedError = Box<dyn std::error::Error>;
 
+    /// The error type returned from this [crate]
     #[derive(Debug)]
     pub enum Error {
+      /// An [I/O error][std::io::Error] occurred while reading from the source
       IoError(std::io::Error),
+      /// The source TIFF had an invalid or incompatible format
       InvalidFormat(BoxedError),
+      /// The source TIFF used a feature that is unsupported by this crate
       UnsupportedFeature(BoxedError),
-      Internal(BoxedError),
+      /// The source TIFF contained a band of an unsupported type/format and/or width
       UnsupportedBandType { format: String, bit_width: u8 },
+      /// The library was used incorrectly; for example, an attempt was made to read a 0×0-pixel
+      /// region
       UsageError(String),
+      /// An internal (rare/unexpected) error occurred; this may indicate an error in the wrapped
+      /// TIFF library
+      Internal(BoxedError),
     }
 
     impl Display for Error {
@@ -109,6 +121,8 @@ mod public_api {
   }
 
   pub mod types {
+    //! Simple common types used throughout the crate
+
     use std::{
       fmt::{Display, Formatter},
       ops::Add,
@@ -116,6 +130,7 @@ mod public_api {
 
     macro_rules! impl_numeric_newtype {
       ($name:ident, $t:ty ) => {
+        /// Generated numeric newtype $name
         #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
         pub struct $name($t);
 
@@ -138,14 +153,17 @@ mod public_api {
         }
 
         impl $name {
+          /// Checked integer subtraction, with standard-library semantics
           pub fn checked_sub(self, other: Self) -> Option<Self> {
             self.0.checked_sub(other.0).map(Self)
           }
 
+          /// Checked integer addition, with standard-library semantics
           pub fn checked_add(self, other: Self) -> Option<Self> {
             self.0.checked_add(other.0).map(Self)
           }
 
+          /// Checked integer multiplication, with standard-library semantics
           pub fn checked_mul(self, other: Self) -> Option<Self> {
             self.0.checked_mul(other.0).map(Self)
           }
@@ -156,66 +174,79 @@ mod public_api {
     impl_numeric_newtype!(Bit, usize);
     impl_numeric_newtype!(Byte, usize);
 
-    impl Byte {
-      fn to_bits(self) -> Bit {
-        self.0.checked_mul(8).map(Bit).expect("multiplication should not overflow")
-      }
-    }
-
+    /// Describes a rectangle of a known extent
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
     pub struct Rectangle {
+      /// The corner (low-x, low-y) coordinate, or origin
       corner: Origin,
+      /// The size, in number of pixels, of the rectangle
       size: Size,
     }
 
     #[allow(dead_code)]
     impl Rectangle {
+      /// Returns the [`Origin`] of `self`
       pub fn corner(&self) -> Origin {
         self.corner
       }
 
+      /// Returns the [`Size`] of self
       pub fn size(&self) -> Size {
         self.size
       }
 
+      /// Returns the X corner coordinate
       pub fn corner_x(&self) -> usize {
         self.corner.x()
       }
 
+      /// Returns the Y corner coordinate
       pub fn corner_y(&self) -> usize {
         self.corner.y()
       }
 
+      /// Returns the width of `self`
       pub fn width(&self) -> usize {
         self.size.width()
       }
 
+      /// Returns the height of `self`
       pub fn height(&self) -> usize {
         self.size.height()
       }
     }
 
+    /// Newtype describing an origin
+    ///
+    /// This newtype is used to avoid confusing `(usize, usize)` tuples of different purposes
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
     pub struct Origin((usize, usize));
 
+    /// Newtype describing a size, in pixels
+    ///
+    /// This newtype is used to avoid confusing `(usize, usize)` tuples of different purposes
     #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
     pub struct Size((usize, usize));
 
     impl Origin {
+      /// Returns `self`'s X coordinate
       fn x(&self) -> usize {
         self.0 .0
       }
 
+      /// Returns `self`'s Y coordinate
       fn y(&self) -> usize {
         self.0 .1
       }
     }
 
     impl Size {
+      /// Returns the width of `self`
       fn width(&self) -> usize {
         self.0 .0
       }
 
+      /// Returns the height of `self`
       fn height(&self) -> usize {
         self.0 .1
       }
@@ -254,30 +285,130 @@ mod public_api {
         rhs.add(self)
       }
     }
-
-    #[cfg(test)]
-    mod tests {
-      use crate::public_api::types::{Bit, Byte};
-
-      #[test]
-      fn bytes_to_bits() {
-        assert_eq!(Bit(88), Byte(11).to_bits());
-      }
-    }
   }
 
   mod decoded {
+    //! Types and implementations related to fetching [regions of data][Decoded], [pixels][Pixel]
+    //! from those regions and [samples][Sample] from those pixels
+    //!
+    //!
+    //!
+    //! # Example: reading a single sample from a single pixel
+    //! ```
+    //! use std::{fs::File, path::PathBuf};
+    //!
+    //! use tiff::{GetPixel, GetSample, Tiff, TEST_IMAGE_DIR};
+    //!
+    //! let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+    //! let img_file = File::open(path).expect("image should exist");
+    //! let mut tiff = Tiff::new(img_file).expect("image should be valid");
+    //!
+    //! let region = tiff.read((0, 0), (2, 2)).expect("unable to read region");
+    //!
+    //! let sample = region.get_pixel((1, 1)).get_sample(0).unwrap();
+    //! let expected: i32 = sample.try_into().unwrap();
+    //! assert_eq!(expected, 9001001i32);
+    //! ```
+
     use crate::public_api::{band_type::BandType, types::Byte, Rectangle};
 
+    /// Defines a [`get_pixel`][GetPixel::get_pixel] method for accessing a pixel by coordinate
+    pub trait GetPixel<'a, C> {
+      /// Returns the [`Pixel`] at the specified coordinate `coord`, if one exists
+      ///
+      /// In the fashion of [`Vec::get`], implementations of this method should return `None` if the
+      /// specified `coord` is out of bounds
+      fn get_pixel(&'a self, coord: C) -> Option<Pixel<'a>>;
+    }
+
+    /// Defines a [`get_sample`][GetSample::get_sample] method for access a sample by index
+    pub trait GetSample<'a> {
+      /// Returns the [`Sample`] at the specified index `idx`, if one exists
+      ///
+      /// This module implements [`GetSample`] for both [`Pixel`] and [`Option<Pixel>`], allowing
+      /// chaining of calls without `?`.
+      ///
+      /// # Example: implementation for [`Pixel`]
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      /// # let some_region = tiff.read((0, 0), (2, 2)).expect("unable to read region");
+      ///
+      /// let pixel = some_region.get_pixel((1, 1)).unwrap();
+      /// assert!(pixel.get_sample(0).is_some());
+      /// ```
+      ///
+      /// # Example: implementation for [`Option<Pixel>`]
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      /// # let some_region = tiff.read((0, 0), (2, 2)).expect("unable to read region");
+      ///
+      /// let pixel = some_region.get_pixel((1, 1));
+      /// assert!(pixel.get_sample(0).is_some());
+      /// ```
+      fn get_sample(&'a self, idx: usize) -> Option<Sample>;
+    }
+
+    /// A sample, i.e. a "band value", from a pixel
+    #[derive(Debug, PartialOrd, PartialEq)]
+    pub enum Sample {
+      /// The value, of type `u8`
+      U08(u8),
+      /// The value, of type `i32`
+      I32(i32),
+      /// The value, of type `f32`
+      F32(f32),
+    }
+
+    /// A decoded region read from a TIFF
     pub struct Decoded {
+      /// The array of [band types][BandType] the TIFF contains
       bands: Box<[BandType]>,
+      /// The raw pixel data read from the TIFF
       data: Box<[u8]>,
+      /// The parsed per-band nodata values
+      ///
+      /// An important note about peculiarities: by convention a TIFF has a single `GdalNodata`
+      /// tag, containing the nodata value **as an ASCII string**. Because a TIFF's band types may
+      /// differ, this array has the same length as a single pixel (i.e. its length is equal to the
+      /// sum of the bands' widths), and contains, without padding, the string parsed into the
+      /// respective data type. For example, if the nodata value is "0" and the TIFF contains a
+      /// single unsigned 8-bit integer band followed by a single unsigned 16-bit integer band, the
+      /// content of this array will be `[0, 0, 0]`: the first byte is "0" parsed into a `u8` and
+      /// the following two bytes "0" parsed into a u16.
       nodata_values: Box<[u8]>,
+      /// The length of a pixel, equal to the sum of the bands' widths, and equal to the length of
+      /// the `nodata_values` array
       pixel_len: Byte,
+      /// The [`Rectangle`] of the source TIFF this decoded region covers
       rectangle: Rectangle,
     }
 
+    /// A single pixel read from a [decoded region][Decoded]
+    #[derive(Debug)]
+    pub struct Pixel<'d> {
+      /// Reference to the array of band types
+      band_types: &'d [BandType],
+      /// The raw byte slice containing the pixel's samples
+      sample_slice: &'d [u8],
+      /// The parsed nodata values (see [`Decoded`])
+      nodata_slice: &'d [u8],
+    }
+
     impl Decoded {
+      /// Instantiates a new [`Decoded`] with the supplied fields
+      ///
+      /// # Panics
+      /// This crate-internal method may panic if the supplied values are not correct with respect
+      /// to each other; for example, the supplied sample data must be of exactly the right length
+      /// with respect to the supplied [`rect`][Rectangle].
       pub(crate) fn new<B, N, D>(bands: B, nodata_values: N, data: D, rect: Rectangle) -> Self
       where
         B: Into<Box<[BandType]>>,
@@ -300,18 +431,76 @@ mod public_api {
         }
       }
 
+      /// Returns the [`Rectangle`] whence this decoded region was read from the TIFF source
+      ///
+      /// # Example
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      ///
+      /// let region = tiff.read((11, 13), (3, 7)).expect("unable to read region");
+      /// assert_eq!(3, region.rectangle().width());
+      /// assert_eq!(7, region.rectangle().height());
+      /// ```
       pub fn rectangle(&self) -> Rectangle {
         self.rectangle
       }
 
+      /// Returns the width, in pixels, of this decoded region
+      ///
+      /// # Example
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      ///
+      /// let region = tiff.read((0, 0), (2, 4)).expect("unable to read region");
+      /// assert_eq!(2, region.width());
+      /// ```
       pub fn width(&self) -> usize {
         self.rectangle().width()
       }
 
+      /// Returns the height, in pixels, of this decoded region
+      ///
+      /// # Example
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      ///
+      /// let region = tiff.read((0, 0), (2, 4)).expect("unable to read region");
+      /// assert_eq!(4, region.height());
+      /// ```
       pub fn height(&self) -> usize {
         self.rectangle().height()
       }
 
+      /// Returns an iterator over the pixels in `self`
+      ///
+      /// The returned iterator yields tuples that contain the **absolute** `(x, y)` coordinates
+      /// (i.e. relative to the TIFF source, rather than the [decoded region][Decoded]).
+      ///
+      /// # Example
+      /// ```
+      /// # use std::{fs::File, path::PathBuf};
+      /// # use tiff::{GetPixel, Tiff, TEST_IMAGE_DIR, GetSample};
+      /// # let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// # let img_file = File::open(path).expect("image should exist");
+      /// # let mut tiff = Tiff::new(img_file).expect("image should be valid");
+      ///
+      /// let region = tiff.read((0, 0), (2, 4)).expect("unable to read region");
+      /// let pixels = region.pixels().collect::<Vec<_>>();
+      /// assert_eq!(8, pixels.len());
+      /// assert_eq!((1, 1), pixels[3].0);
+      /// ```
       pub fn pixels(&self) -> impl Iterator<Item = ((usize, usize), Pixel<'_>)> {
         (0..self.height()).flat_map(move |rel_y| {
           (0..self.width()).filter_map(move |rel_x| {
@@ -323,13 +512,6 @@ mod public_api {
           })
         })
       }
-    }
-
-    #[derive(Debug, PartialOrd, PartialEq)]
-    pub enum Sample {
-      U08(u8),
-      I32(i32),
-      F32(f32),
     }
 
     impl TryFrom<Sample> for u8 {
@@ -365,17 +547,6 @@ mod public_api {
       }
     }
 
-    #[derive(Debug)]
-    pub struct Pixel<'d> {
-      band_types: &'d [BandType],
-      sample_slice: &'d [u8],
-      nodata_slice: &'d [u8],
-    }
-
-    pub trait GetPixel<'a, C> {
-      fn get_pixel(&'a self, coord: C) -> Option<Pixel<'a>>;
-    }
-
     impl<'a> GetPixel<'a, usize> for Decoded {
       fn get_pixel(&'a self, coord: usize) -> Option<Pixel<'a>> {
         let len = self.height() * self.width();
@@ -407,10 +578,6 @@ mod public_api {
           self.get_pixel(coord.0 + self.width() * coord.1)
         }
       }
-    }
-
-    pub trait GetSample<'a> {
-      fn get_sample(&'a self, idx: usize) -> Option<Sample>;
     }
 
     impl<'a> GetSample<'a> for Pixel<'a> {
@@ -470,7 +637,7 @@ mod public_api {
     }
 
     impl BandType {
-      pub fn width(&self) -> Byte {
+      pub fn width(self) -> Byte {
         match self {
           Self::U8 => 1,
           Self::I32 | Self::F32 => 4,
@@ -481,7 +648,11 @@ mod public_api {
   }
 
   mod tiff {
-    use std::io::{Read, Seek};
+    use std::{
+      any,
+      io::{Read, Seek},
+      str::FromStr,
+    };
 
     use super::{Decoded, Error};
     use crate::{
@@ -540,10 +711,8 @@ mod public_api {
 
     #[allow(dead_code)]
     impl CalculatedFetchRegion {
-      fn new(
-        t: VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize),
-      ) -> Result<Self> {
-        Ok(Self { img_dim: t.img_dim, tile_dim: t.tile_dim, origin, fetch_rect })
+      fn new(t: VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize)) -> Self {
+        Self { img_dim: t.img_dim, tile_dim: t.tile_dim, origin, fetch_rect }
       }
 
       fn fetch_rect(&self) -> (usize, usize) {
@@ -639,18 +808,34 @@ mod public_api {
         let mut decoder = Decoder::new(r)?;
         let band_types = convert_band_types(&decoder)?;
 
-        let nodata_value = match decoder.get_tag(Tag::GdalNodata)? {
-          Value::Ascii(s) => s,
-          _ => panic!("expected GdalNodata tag to be of type ASCII"),
-        };
+        let value = decoder.get_tag(Tag::GdalNodata)?;
+        let nodata_value = match value {
+          Value::Ascii(s) => Ok(s),
+          _ => Err(Error::InvalidFormat("expected GdalNodata tag to be of type ASCII".into())),
+        }?;
 
         Ok(Self { decoder, band_types, nodata_value })
       }
 
       pub fn read(&mut self, corner: (usize, usize), size: (usize, usize)) -> Result<Decoded> {
-        // TODO: convert into errors
-        assert!(size.0 > 0);
-        assert!(size.1 > 0);
+        fn try_parse<T>(val: &str) -> Result<T>
+        where
+          T: FromStr,
+          <T as FromStr>::Err: std::error::Error,
+        {
+          T::from_str(val).map_err(|e| {
+            Error::InvalidFormat(
+              format!("nodata value '{val}' cannot be parsed into {}: {e}", any::type_name::<T>())
+                .into(),
+            )
+          })
+        }
+
+        if size.0 == 0 || size.1 == 0 {
+          return Err(Error::UsageError(
+            "region to fetch must be at minimum 1×1 pixels".to_string(),
+          ));
+        }
 
         let (dx, dy) = self.dimensions();
         if corner.0 + size.0 >= dx {
@@ -672,82 +857,79 @@ mod public_api {
           self.decoder.image().chunk_offsets.len(),
         )?;
 
-        let calculated = CalculatedFetchRegion::new(verified, corner, size)?;
+        let freg = CalculatedFetchRegion::new(verified, corner, size);
 
         let sample_size = usize::from(self.pixel_width());
 
-        let mut result_vec =
-          vec![0u8; calculated.rect_width() * calculated.rect_height() * sample_size];
+        let mut result_vec = vec![0u8; freg.rect_width() * freg.rect_height() * sample_size];
 
-        let tile_width = calculated.tile_width();
-        let tile_height = calculated.tile_height();
+        let tile_width = freg.tile_width();
+        let tile_height = freg.tile_height();
 
-        for absyt in calculated.start_y_tile()..=calculated.end_y_tile() {
-          for absxt in calculated.start_x_tile()..=calculated.end_x_tile() {
-            let tile_src_x_corner = absxt * tile_width;
-            let tile_src_first_x = calculated.origin_x().saturating_sub(tile_src_x_corner);
-            let l_right_x = ((calculated.origin_x() + calculated.rect_width()) - tile_src_x_corner)
-              .min(tile_width);
+        for absyt in freg.start_y_tile()..=freg.end_y_tile() {
+          for absxt in freg.start_x_tile()..=freg.end_x_tile() {
+            let tsrc_hor_corner = absxt * tile_width;
+            let tile_src_first_x = freg.origin_x().saturating_sub(tsrc_hor_corner);
+            let l_right_x =
+              ((freg.origin_x() + freg.rect_width()) - tsrc_hor_corner).min(tile_width);
 
-            let tile_src_y_corner = absyt * tile_height;
-            let tile_src_first_y = calculated.origin_y().saturating_sub(tile_src_y_corner);
-            let l_lower_y = ((calculated.origin_y() + calculated.rect_height())
-              - tile_src_y_corner)
-              .min(tile_height);
+            let tsrc_vert_corner = absyt * tile_height;
+            let tile_src_first_y = freg.origin_y().saturating_sub(tsrc_vert_corner);
+            let l_lower_y =
+              ((freg.origin_y() + freg.rect_height()) - tsrc_vert_corner).min(tile_height);
 
-            let src_first_x = tile_src_x_corner + tile_src_first_x;
-            let dst_first_x = src_first_x - calculated.origin_x();
+            let src_first_x = tsrc_hor_corner + tile_src_first_x;
+            let dst_first_x = src_first_x - freg.origin_x();
             let dst_right_x = dst_first_x + (l_right_x - tile_src_first_x);
 
-            let src_first_y = tile_src_y_corner + tile_src_first_y;
-            let dst_first_y = src_first_y - calculated.origin_y();
+            let src_first_y = tsrc_vert_corner + tile_src_first_y;
+            let dst_first_y = src_first_y - freg.origin_y();
             let dst_lower_y = dst_first_y + (l_lower_y - tile_src_first_y);
 
             let src_range_y = tile_src_first_y..l_lower_y;
             let dst_range_y = dst_first_y..dst_lower_y;
 
-            assert_eq!(src_range_y.len(), dst_range_y.len());
+            debug_assert_eq!(src_range_y.len(), dst_range_y.len());
 
-            let tile_idx = absxt + absyt * calculated.x_tiles();
+            let tile_idx = absxt + absyt * freg.x_tiles();
 
-            let _d = self.decoder.read_chunk(tile_idx)?;
-            let source_octet_slice = _d.as_bytes();
+            let chunk = self.decoder.read_chunk(tile_idx)?;
+            let source_octet_slice = chunk.as_bytes();
 
             let (tile_width, tile_height) = self.decoder.chunk_data_dimensions(tile_idx);
 
-            assert_eq!(source_octet_slice.len(), tile_width * tile_height * sample_size);
+            let actual = source_octet_slice.len();
+            let expected = tile_width * tile_height * sample_size;
+            if actual != expected {
+              return Err(Error::Internal(
+                format!("decoded result size incorrect: expected {expected} ≠ actual {actual}")
+                  .into(),
+              ));
+            }
 
             for (sy, dy) in src_range_y.clone().zip(dst_range_y.clone()) {
-              let sp_start = tile_src_first_x + tile_width * sy;
-              let sp_count = l_right_x - tile_src_first_x;
-              let sp_offset = sp_start * sample_size;
-              let sp_byte_range = sp_offset..sp_offset + (sample_size * sp_count);
+              let src_start = tile_src_first_x + tile_width * sy;
+              let src_count = l_right_x - tile_src_first_x;
+              let src_offset = src_start * sample_size;
+              let src_bytes = src_offset..src_offset + (sample_size * src_count);
 
-              let dp_start = dst_first_x + calculated.rect_width() * dy;
-              let dp_count = dst_right_x - dst_first_x;
-              let dp_offset = dp_start * sample_size;
-              let dp_byte_range = dp_offset..dp_offset + (sample_size * dp_count);
+              let dst_start = dst_first_x + freg.rect_width() * dy;
+              let dst_count = dst_right_x - dst_first_x;
+              let dst_offset = dst_start * sample_size;
+              let dst_bytes = dst_offset..dst_offset + (sample_size * dst_count);
 
-              result_vec[dp_byte_range].copy_from_slice(&source_octet_slice[sp_byte_range]);
+              result_vec[dst_bytes].copy_from_slice(&source_octet_slice[src_bytes]);
             }
           }
         }
 
         let mut ndv = Vec::with_capacity(usize::from(self.pixel_width()));
+
         for band in self.band_types() {
           let x = match band {
-            BandType::U8 => {
-              let value: u8 = self.nodata_value().parse().unwrap(); // TODO
-              value.to_le_bytes().to_vec()
-            }
-            BandType::F32 => {
-              let value: f32 = self.nodata_value().parse().unwrap(); // TODO
-              value.to_le_bytes().to_vec()
-            }
-            BandType::I32 => {
-              let value: i32 = self.nodata_value().parse().unwrap(); // TODO
-              value.to_le_bytes().to_vec()
-            }
+            BandType::U8 => try_parse::<u8>(self.nodata_value())?.to_le_bytes().to_vec(),
+            BandType::F32 => try_parse::<f32>(self.nodata_value())?.to_le_bytes().to_vec(),
+            BandType::I32 => try_parse::<i32>(self.nodata_value())?.to_le_bytes().to_vec(),
           };
           ndv.extend(x);
         }
@@ -773,7 +955,7 @@ mod public_api {
           (SampleFormat::IEEEFP, 32) => BandType::F32,
           _ => {
             return Err(Error::UnsupportedBandType {
-              format: format!("{:?}", sf),
+              format: format!("{sf:?}"),
               bit_width: bits_per_sample,
             });
           }
@@ -801,7 +983,7 @@ mod public_api {
         let img_dim = (8922, 5907);
         let tile_dim = (256, 256);
         let vtc = VerifiedTileCount { img_dim, tile_dim };
-        let cfr = CalculatedFetchRegion::new(vtc, (128, 128), (256, 256)).unwrap();
+        let cfr = CalculatedFetchRegion::new(vtc, (128, 128), (256, 256));
 
         assert_eq!(0, cfr.start_x_tile());
         assert_eq!(0, cfr.start_y_tile());
@@ -820,8 +1002,6 @@ mod public_api {
 
     use super::*;
     use crate::public_api::decoded::{GetPixel, GetSample};
-
-    const TEST_IMAGE_DIR: &str = "./tests/images";
 
     #[test]
     fn api_example() {

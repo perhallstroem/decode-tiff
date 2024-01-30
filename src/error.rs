@@ -1,9 +1,10 @@
 use std::{error::Error, fmt, io, str, string};
 
+use weezl::LzwError;
+
 use crate::{
   decoder::ifd::Value,
   tags::{CompressionMethod, SampleFormat, Tag},
-  weezl::LzwError,
 };
 
 /// Tiff error kinds.
