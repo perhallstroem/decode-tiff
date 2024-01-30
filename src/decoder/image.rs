@@ -64,7 +64,6 @@ impl TileAttributes {
 pub(crate) struct Image {
   pub ifd: Option<Directory>,
   pub bits_per_sample: u8,
-  #[allow(unused)]
   pub samples: u16,
   pub sample_format: Vec<SampleFormat>,
   pub compression_method: CompressionMethod,

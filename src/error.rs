@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, io, str, string};
 
 use crate::{
-  decoder::{ifd::Value, ChunkType},
+  decoder::{ifd::Value},
   tags::{CompressionMethod, SampleFormat, Tag},
   weezl::LzwError,
 };

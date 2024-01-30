@@ -1,15 +1,52 @@
-//! Decoding and Encoding of TIFF Images
-//!
-//! TIFF (Tagged Image File Format) is a versatile image format that supports
-//! lossless and lossy compression.
-//!
-//! # Related Links
-//! * <https://web.archive.org/web/20210108073850/https://www.adobe.io/open/standards/TIFF.html> -
-//!   The TIFF specification
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+// forbid unused `Result`s etc
+#![forbid(unused_must_use)]
+// do not disallow identifiers like "max_𝜀"
+#![allow(uncommon_codepoints)]
+#![warn(rust_2018_idioms)]
+#![warn(rust_2021_compatibility)]
+//
+// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ Clippy ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+#![warn(clippy::pedantic)]
+#![warn(clippy::missing_docs_in_private_items)]
+#![allow(clippy::must_use_candidate)]
+// instead use expect() to provide rationale
+#![warn(clippy::unwrap_used)]
+// ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ rustdoc ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+//
+// Documentation is primarily for contributors, so allowing links to private items is a must.
+#![allow(rustdoc::private_intra_doc_links)]
+//
+// Broken links are quickly fixed if caught immediately, so just deny them
+#![forbid(rustdoc::broken_intra_doc_links)]
+//
+// Do not allow invalid/empty code blocks. Code blocks are meant to look like this:
+//
+//   ┆
+//   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …
+//   ┆ /// ```
+//   ┆ ///   inside.is(code);
+//   ┆ /// ```
+//   ┆ /// The documentation may, or may not, continue down here.
+//   ┆
+//
+// If the newline is omitted, the code will be neither formatted nor executed:
+//
+//   ┆
+//   ┆ /// This is a rustdoc comment documenting something. It goes on and on and on …```
+//   ┆ ///   inside.is(code);
+//   ┆ /// ```
+//   ┆ /// The documentation may, or may not, continue down here.
+//   ┆
+//
+// Hence the rule.
+#![deny(rustdoc::invalid_rust_codeblocks)]
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-extern crate weezl;
+pub use weezl;
 
-use std::io::{Read, Seek};
 #[cfg(test)]
 use std::{fs::File, path::PathBuf};
 
@@ -28,14 +65,10 @@ pub mod tags;
 const TEST_IMAGE_DIR: &str = "./tests/images";
 
 mod public_api {
-  use std::{
-    fmt::Display,
-    io::{Read, Seek},
-  };
-
   pub use decoded::Decoded;
   pub use error::Error;
   pub use tiff::Tiff;
+  pub use types::Rectangle;
 
   mod error {
     use std::fmt::{Display, Formatter};
@@ -51,6 +84,7 @@ mod public_api {
       UnsupportedFeature(BoxedError),
       Internal(BoxedError),
       UnsupportedBandType { format: String, bit_width: u8 },
+      UsageError(String),
     }
 
     impl Display for Error {
@@ -63,6 +97,7 @@ mod public_api {
           Error::UnsupportedBandType { format, bit_width } => {
             write!(f, "unsupported {bit_width}-bit band type {format}")
           }
+          Error::UsageError(str) => write!(f, "usage error: {str}")
         }
       }
     }
@@ -83,6 +118,7 @@ mod public_api {
 
   pub mod types {
     use std::fmt::{Display, Formatter};
+    use std::ops::Add;
 
     macro_rules! impl_numeric_newtype {
       ($name:ident, $t:ty ) => {
@@ -132,6 +168,80 @@ mod public_api {
       }
     }
 
+    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+    pub struct Rectangle {
+      corner: Origin,
+      size: Size
+    }
+
+    impl Rectangle {
+      pub fn corner(&self) -> Origin {
+        self.corner
+      }
+
+      pub fn size(&self) -> Size {
+        self.size
+      }
+
+      pub fn corner_x(&self) -> usize { self.corner.x() }
+      pub fn corner_y(&self) -> usize { self.corner.y() }
+      pub fn width(&self) -> usize { self.size.width() }
+      pub fn height(&self) -> usize { self.size.height() }
+    }
+
+    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+    pub struct Origin((usize, usize));
+
+    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+    pub struct Size((usize, usize));
+
+    impl Origin {
+      fn x(&self) -> usize { self.0.0 }
+      fn y(&self) -> usize { self.0.1 }
+    }
+
+    impl Size {
+      fn width(&self) -> usize { self.0.0 }
+      fn height(&self) -> usize { self.0.1 }
+    }
+
+    impl From<(usize, usize)> for Origin {
+      fn from(value: (usize, usize)) -> Self {
+        Self(value)
+      }
+    }
+
+    impl From<(usize, usize)> for Size {
+      fn from(value: (usize, usize)) -> Self {
+        Self(value)
+      }
+    }
+
+    impl From<(Origin, Size)> for Rectangle {
+      fn from(value: (Origin, Size)) -> Self {
+        Rectangle {
+          corner: value.0,
+          size: value.1,
+        }
+      }
+    }
+
+    impl Add<Origin> for Size {
+      type Output = Rectangle;
+
+      fn add(self, rhs: Origin) -> Self::Output {
+        Rectangle::from((rhs, self))
+      }
+    }
+
+    impl Add<Size> for Origin {
+      type Output = Rectangle;
+
+      fn add(self, rhs: Size) -> Self::Output {
+        rhs.add(self)
+      }
+    }
+
     #[cfg(test)]
     mod tests {
       use crate::public_api::types::{Bit, Byte};
@@ -144,44 +254,58 @@ mod public_api {
   }
 
   mod decoded {
-    use crate::public_api::{band_type::BandType, types::Byte};
+    use std::iter::{FilterMap, FlatMap};
+    use std::marker::PhantomData;
+    use std::ops::Range;
+    use crate::public_api::{band_type::BandType, Rectangle, types::Byte};
 
     pub struct Decoded {
       bands: Box<[BandType]>,
       data: Box<[u8]>,
       nodata_values: Box<[u8]>,
       pixel_len: Byte,
-      width: usize,
-      height: usize,
+      rectangle: Rectangle
     }
 
     impl Decoded {
-      pub(crate) fn new<B, N, D, W, H>(
-        bands: B, nodata_values: N, data: D, width: W, height: H,
+      pub(crate) fn new<B, N, D>(
+        bands: B, nodata_values: N, data: D, rect: Rectangle
       ) -> Self
       where
         B: Into<Box<[BandType]>>,
         N: Into<Box<[u8]>>,
         D: Into<Box<[u8]>>,
-        W: Into<usize>,
-        H: Into<usize>,
       {
-        let (width, height, bands, data) = (width.into(), height.into(), bands.into(), data.into());
+        let (width, height, bands, data) = (rect.width(), rect.height(), bands.into(), data.into());
         let pixel_len: usize = bands.iter().map(|b| usize::from(b.width())).sum();
         let nodata_values = nodata_values.into();
 
         assert_eq!(nodata_values.len(), pixel_len.into());
         assert_eq!(data.len(), width * height * pixel_len);
 
-        Self { bands, data, nodata_values, pixel_len: pixel_len.into(), width, height }
+        Self { bands, data, nodata_values, pixel_len: pixel_len.into(), rectangle: rect }
+      }
+
+      pub fn rectangle(&self) -> Rectangle {
+        self.rectangle
       }
 
       pub fn width(&self) -> usize {
-        self.width
+        self.rectangle().width()
       }
 
       pub fn height(&self) -> usize {
-        self.height
+        self.rectangle().height()
+      }
+
+      pub fn pixels(&self) -> impl Iterator<Item=((usize, usize), Pixel<'_>)> {
+          (0..self.height()).flat_map(move |rel_y| {
+            (0..self.width()).filter_map(move |rel_x| self.get_pixel((rel_x, rel_y)).map(|p| {
+              let abs_x = rel_x + self.rectangle().corner_x();
+              let abs_y = rel_y + self.rectangle().corner_y();
+              ((abs_x, abs_y), p)
+            }))
+          })
       }
     }
 
@@ -238,7 +362,7 @@ mod public_api {
 
     impl<'a> GetPixel<'a, usize> for Decoded {
       fn get_pixel(&'a self, coord: usize) -> Option<Pixel<'a>> {
-        let len = self.height * self.width;
+        let len = self.height() * self.width();
         if coord >= len {
           return None;
         }
@@ -261,10 +385,10 @@ mod public_api {
 
     impl<'a> GetPixel<'a, (usize, usize)> for Decoded {
       fn get_pixel(&'a self, coord: (usize, usize)) -> Option<Pixel<'a>> {
-        if coord.0 >= self.width || coord.1 >= self.height {
+        if coord.0 >= self.width() || coord.1 >= self.height() {
           None
         } else {
-          self.get_pixel(coord.0 + self.width * coord.1)
+          self.get_pixel(coord.0 + self.width() * coord.1)
         }
       }
     }
@@ -349,6 +473,7 @@ mod public_api {
       public_api::{band_type::BandType, types::Byte},
       tags::{SampleFormat, Tag},
     };
+    use crate::public_api::types::{Origin, Size};
 
     pub type Result<T> = std::result::Result<T, Error>;
 
@@ -508,6 +633,15 @@ mod public_api {
         assert!(size.0 > 0);
         assert!(size.1 > 0);
 
+        let (dx, dy) = self.dimensions();
+        if corner.0 + size.0 >= dx {
+          return Err(Error::UsageError(format!("image X dimension {dx} < requested {}", corner.0+size.0)));
+        }
+        if corner.1 + size.1 >= dy {
+          return Err(Error::UsageError(format!("image Y dimension {dy} < requested {}", corner.1+size.1)));
+        }
+
+
         let verified = VerifiedTileCount::new(
           self.dimensions(),
           self.decoder.chunk_dimensions(),
@@ -594,9 +728,11 @@ mod public_api {
           ndv.extend(x);
         }
 
-        let width = calculated.rect_width();
-        let height = calculated.rect_height();
-        Ok(Decoded::new(self.band_types(), ndv, result_vec, width, height))
+        let size = Size::from(size);
+        let origin = Origin::from(corner);
+        let rect = size + origin;
+
+        Ok(Decoded::new(self.band_types(), ndv, result_vec, rect))
       }
     }
 
@@ -609,6 +745,7 @@ mod public_api {
       for sf in sample_formats {
         result.push(match (sf, bits_per_sample) {
           (SampleFormat::Uint, 8) => BandType::U8,
+          (SampleFormat::Int, 32) => BandType::I32,
           (SampleFormat::IEEEFP, 32) => BandType::F32,
           _ => {
             return Err(Error::UnsupportedBandType {
@@ -654,6 +791,7 @@ mod public_api {
   #[cfg(test)]
   mod tests {
     use std::{fs::File, path::PathBuf};
+    use std::ops::Neg;
 
     use rand::{thread_rng, Rng};
 
@@ -668,33 +806,32 @@ mod public_api {
 
     #[test]
     fn api_example() {
-      let path = PathBuf::from(TEST_IMAGE_DIR).join("tiled-small-i32-known.tiff");
+      let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
       let img_file = File::open(path).expect("image should exist");
       let mut tiff = Tiff::new(img_file).expect("image should be valid");
 
-      assert_eq!((213, 321), tiff.dimensions());
-      assert_eq!(&[BandType::I32], tiff.band_types());
+      let region = tiff.read((10, 10), (5, 5)).unwrap();
 
-      let slice = tiff.read((10, 10), (20, 30)).unwrap();
-      assert_eq!(10, slice.width());
-      assert_eq!(20, slice.height());
+      // There are 25 pixels in the read region
+      let pixels : Vec<_> = region.pixels().collect();
+      assert_eq!(25, pixels.len());
 
-      let sample = slice.get_pixel((5, 5)).get_sample(0).unwrap();
-      assert_eq!(Sample::I32(9015015), sample);
+      // 20 of the pixels have a defined sample(0); the others are undefined (nodata)
+      let samples : Vec<_> = region.pixels().filter_map(|(_, pixel)| pixel.get_sample(0)).collect();
+      assert_eq!(20, samples.len());
     }
 
     #[test]
     fn e2e_smoke() {
-      // TODO: point this to the "known test file"
-      let path = "/Users/perh/Downloads/000_pq4fee8bf1-DSM.tiff";
+      let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
       let img_file = File::open(path).expect("image should exist");
       let mut tiff = Tiff::new(img_file).expect("image should be valid");
 
       let dimensions = tiff.dimensions();
-      assert_eq!((8922, 5907), dimensions);
+      assert_eq!((192, 256), dimensions);
 
       let mut rng = thread_rng();
-      for _ in 0..10 {
+      for _ in 0..10_000 {
         let lo_x = rng.gen_range(0..dimensions.0 - 1);
         let left_x = dimensions.0 - lo_x;
         let sx = rng.gen_range(1..left_x);
@@ -707,17 +844,15 @@ mod public_api {
 
         let decoded = tiff.read((lo_x, lo_y), (sx, sy)).unwrap();
 
-        for _ in 0..10 {
+        for _ in 0..100 {
           let rand_x = rng.gen_range(lo_x..lo_x + sx);
           let rand_y = rng.gen_range(lo_y..lo_y + sy);
           let rel_x = rand_x - lo_x;
           let rel_y = rand_y - lo_y;
 
-          eprintln!("Checking random point ABS({rand_x}, {rand_y}) = REL({rel_x}, {rel_y})");
-
           let maybe_sample = decoded.get_pixel((rel_x, rel_y)).get_sample(0);
-          if rand_x % 3 == 0 && rand_y % 7 == 0 {
-            // If pixel X/Y are evenly 3/7, respectively, expect nodata
+          if rand_x % 3 == 0 {
+            // If pixel X is multiple of 3 expect nodata
             assert!(maybe_sample.is_none());
           } else {
             // else expect sample to be defined and have a specific value
@@ -725,29 +860,16 @@ mod public_api {
               .expect("sample should be defined")
               .try_into()
               .expect("sample should be i32");
-            let constant = if rand_x % 4 == 0 { -9_000_000 } else { 9_000_000 };
-            assert_eq!(constant + rand_x as i32 * 1000 + rand_y as i32, val);
-          }
-        }
-      }
 
-      let band_types = tiff.band_types();
+            let expected = 9_000_000 + rand_x as i32 * 1000 + rand_y as i32;
+            let expected = if rand_x % 4 == 0 { expected.neg() } else { expected };
 
-      eprintln!("band_types: {band_types:?}");
-
-      let sloice = tiff.read((0, 0), (1000, 1)).unwrap();
-      eprintln!("slice dimensions: height={}, width={}", sloice.height(), sloice.width());
-
-      for y in 0..sloice.height() {
-        for x in 0..sloice.width() {
-          if let Some(sample) = sloice.get_pixel((x, y)).get_sample(0) {
-            let val: f32 = sample.try_into().unwrap();
-            eprintln!("woot: {x}, {y} => {val:?}");
-            break;
+            assert_eq!(expected, val);
           }
         }
       }
     }
+
   }
 }
 
