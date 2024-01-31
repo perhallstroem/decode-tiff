@@ -746,23 +746,38 @@ mod public_api {
     /// direct mapping to [Result][std::result::Result].
     type Result<T> = std::result::Result<T, Error>;
 
+    /// Basic properties of the fetch region and therefrom derived values
     struct CalculatedFetchRegion {
+      /// The dimensions of the whole image
       img_dim: (usize, usize),
+      /// The dimensions of each tile in the image
       tile_dim: (usize, usize),
+      /// The origin of the fetch region
       origin: (usize, usize),
+      /// The size of the fetch region
       fetch_rect: (usize, usize),
     }
 
+    /// Data on the image/tile dimensions
     struct VerifiedTileCount {
+      /// The dimensions of the whole image
       img_dim: (usize, usize),
+      /// The dimensions of each tile in the image
       tile_dim: (usize, usize),
     }
 
     impl<R> Tiff<R> {
+      /// Returns the image dimensions, in pixels
       pub fn dimensions(&self) -> (usize, usize) {
         self.decoder.dimensions()
       }
 
+      /// Returns the length per pixel, in bytes (for example, an RGB image with 8-bit samples has
+      /// 3-byte pixels)
+      ///
+      /// # Panics
+      /// If the image on which this is called has a sample size that is not an even number of
+      /// bytes, this function panics.
       pub fn pixel_width(&self) -> Byte {
         let samples = usize::from(self.decoder.image().samples);
         let bits_per_sample = usize::from(self.decoder.image().bits_per_sample);
@@ -779,10 +794,12 @@ mod public_api {
           .expect("usize should be wide enough to contain pixel width")
       }
 
+      /// Returns the array of [`self`]'s [band types][BandType]
       pub fn band_types(&self) -> &[BandType] {
         self.band_types.as_ref()
       }
 
+      /// Returns the nodata value read from the TIFF header
       fn nodata_value(&self) -> &str {
         self.nodata_value.as_str()
       }
@@ -792,6 +809,12 @@ mod public_api {
     where
       R: Read + Seek,
     {
+      /// Instantiates a new [`Tiff`]
+      ///
+      /// # Errors
+      /// Creating a [`Tiff`] instance requires seeking and reading from the source TIFF, which
+      /// means that [I/O errors][Error::IoError] may occur. Other typical errors are
+      /// [`Error::UnsupportedFeature`], [`Error::UnsupportedBandType`] or [`Error::InvalidFormat`].
       pub fn new(r: R) -> Result<Self> {
         let mut decoder = Decoder::new(r)?;
         let band_types = convert_band_types(&decoder)?;
@@ -805,7 +828,17 @@ mod public_api {
         Ok(Self { decoder, band_types, nodata_value })
       }
 
+      /// Reads a [region][Decoded] from `self`
+      ///
+      /// # Errors
+      /// A very large number of errors can possibly occur while reading a region, including the
+      /// obvious I/O errors.
       pub fn read(&mut self, corner: (usize, usize), size: (usize, usize)) -> Result<Decoded> {
+        /// Attempts to parse the supplied nodata string into a `T`, returning on error
+        /// [`Error::InvalidFormat`]
+        ///
+        /// # Errors
+        /// If the string cannot be parsed into a `T`, [`Error::InvalidFormat`] is returned
         fn try_parse<T>(val: &str) -> Result<T>
         where
           T: FromStr,
@@ -845,7 +878,7 @@ mod public_api {
           self.decoder.image().chunk_offsets.len(),
         )?;
 
-        let freg = CalculatedFetchRegion::new(verified, corner, size);
+        let freg = CalculatedFetchRegion::new(&verified, corner, size);
 
         let sample_size = usize::from(self.pixel_width());
 
@@ -935,7 +968,7 @@ mod public_api {
     impl CalculatedFetchRegion {
       /// Instantiates a new [`CalculatedFetchRegion`] for the provided image, tile and fetch
       /// configuration
-      fn new(t: VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize)) -> Self {
+      fn new(t: &VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize)) -> Self {
         Self { img_dim: t.img_dim, tile_dim: t.tile_dim, origin, fetch_rect }
       }
 
@@ -1001,6 +1034,7 @@ mod public_api {
     }
 
     impl VerifiedTileCount {
+      /// Returns a new instance of [`VerifiedTileCount`], if the supplied numbers match up
       fn new(
         img_dim: (usize, usize), tile_dim: (usize, usize), actual_tile_count: usize,
       ) -> Result<Self> {
@@ -1012,17 +1046,24 @@ mod public_api {
           .checked_mul(img_height.div_ceil(tile_height))
           .expect("pixel count calculation cannot reasonably overflow");
         if expected_tiles != actual_tile_count {
-          return Err(
-            Error::Internal(
-              format!("given image dimension expected there to be {expected_tiles}, but found {actual_tile_count}").into()
-            )
-          );
+          return Err(Error::Internal(
+            format!("expected {expected_tiles} but had {actual_tile_count} tiles").into(),
+          ));
         }
 
         Ok(Self { img_dim, tile_dim })
       }
     }
 
+    /// Returns the array of [band types][BandType] present in the source TIFF
+    ///
+    /// The TIFF specification allows bands to be signed/unsigned integers or floats, and each band
+    /// can have an arbitrary width. This crate restricts the types of bands to combinations of
+    /// sample formats and sample widths that match Rust-native primitives.
+    ///
+    /// # Errors
+    /// Returns [`Error::UnsupportedBandType`] if the TIFF contains any band with a format that
+    /// cannot be represented by [`BandType`]
     fn convert_band_types<R: Read + Seek>(decoder: &Decoder<R>) -> Result<Box<[BandType]>> {
       let bits_per_sample = decoder.image().bits_per_sample;
       let sample_formats = decoder.image().sample_format.as_slice();
@@ -1064,7 +1105,7 @@ mod public_api {
         let img_dim = (8922, 5907);
         let tile_dim = (256, 256);
         let vtc = VerifiedTileCount { img_dim, tile_dim };
-        let cfr = CalculatedFetchRegion::new(vtc, (128, 128), (256, 256));
+        let cfr = CalculatedFetchRegion::new(&vtc, (128, 128), (256, 256));
 
         assert_eq!(0, cfr.start_x_tile());
         assert_eq!(0, cfr.start_y_tile());
