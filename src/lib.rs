@@ -1185,8 +1185,6 @@ mod public_api {
         let left_y = dimensions.height() - lo_y;
         let sy = rng.gen_range(1..left_y);
 
-        eprintln!("{lo_x}, {lo_y} .. {}, {}", lo_x + sx, lo_y + sy);
-
         let decoded = tiff.read((lo_x, lo_y), (sx, sy)).unwrap();
 
         for _ in 0..100 {
