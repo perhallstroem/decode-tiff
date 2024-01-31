@@ -233,24 +233,24 @@ mod public_api {
 
     impl Origin {
       /// Returns `self`'s X coordinate
-      fn x(&self) -> usize {
+      pub fn x(&self) -> usize {
         self.0 .0
       }
 
       /// Returns `self`'s Y coordinate
-      fn y(&self) -> usize {
+      pub fn y(&self) -> usize {
         self.0 .1
       }
     }
 
     impl Size {
       /// Returns the width of `self`
-      fn width(&self) -> usize {
+      pub fn width(&self) -> usize {
         self.0 .0
       }
 
       /// Returns the height of `self`
-      fn height(&self) -> usize {
+      pub fn height(&self) -> usize {
         self.0 .1
       }
     }
@@ -730,7 +730,8 @@ mod public_api {
     /// let file = File::open(path).expect("unable to open file");
     /// let tiff = Tiff::new(&file).unwrap();
     ///
-    /// assert_eq!((192, 256), tiff.dimensions());
+    /// assert_eq!(192, tiff.dimensions().width());
+    /// assert_eq!(256, tiff.dimensions().height());
     /// ```
     pub struct Tiff<R> {
       /// The wrapped [`Decoder`], which performs the actual low-level reading and decoding
@@ -749,27 +750,27 @@ mod public_api {
     /// Basic properties of the fetch region and therefrom derived values
     struct CalculatedFetchRegion {
       /// The dimensions of the whole image
-      img_dim: (usize, usize),
+      img_dim: Size,
       /// The dimensions of each tile in the image
-      tile_dim: (usize, usize),
+      tile_dim: Size,
       /// The origin of the fetch region
-      origin: (usize, usize),
+      origin: Origin,
       /// The size of the fetch region
-      fetch_rect: (usize, usize),
+      fetch_rect: Size,
     }
 
     /// Data on the image/tile dimensions
     struct VerifiedTileCount {
       /// The dimensions of the whole image
-      img_dim: (usize, usize),
+      img_dim: Size,
       /// The dimensions of each tile in the image
-      tile_dim: (usize, usize),
+      tile_dim: Size,
     }
 
     impl<R> Tiff<R> {
       /// Returns the image dimensions, in pixels
-      pub fn dimensions(&self) -> (usize, usize) {
-        self.decoder.dimensions()
+      pub fn dimensions(&self) -> Size {
+        Size::from(self.decoder.dimensions())
       }
 
       /// Returns the length per pixel, in bytes (for example, an RGB image with 8-bit samples has
@@ -830,10 +831,27 @@ mod public_api {
 
       /// Reads a [region][Decoded] from `self`
       ///
+      ///
+      /// # Example
+      ///
+      /// ```
+      /// use std::{fs::File, io::Read, path::PathBuf};
+      ///
+      /// use tiff::{Tiff, TEST_IMAGE_DIR};
+      ///
+      /// let path = PathBuf::from(TEST_IMAGE_DIR).join("fixture.tiff");
+      /// let file = File::open(path).expect("unable to open file");
+      /// let mut  tiff = Tiff::new(&file).unwrap();
+      ///
+      /// let region = tiff.read((10, 20), (30, 40)).unwrap();
+      /// assert_eq!(30, region.width());
+      /// assert_eq!(40, region.height());
+      /// ```
+      ///
       /// # Errors
       /// A very large number of errors can possibly occur while reading a region, including the
       /// obvious I/O errors.
-      pub fn read(&mut self, corner: (usize, usize), size: (usize, usize)) -> Result<Decoded> {
+      pub fn read<O: Into<Origin>, S: Into<Size>>(&mut self, corner: O, size: S) -> Result<Decoded> {
         /// Attempts to parse the supplied nodata string into a `T`, returning on error
         /// [`Error::InvalidFormat`]
         ///
@@ -852,29 +870,34 @@ mod public_api {
           })
         }
 
-        if size.0 == 0 || size.1 == 0 {
+        let corner = corner.into();
+        let size = size.into();
+
+        if size.width() == 0 || size.height() == 0 {
           return Err(Error::UsageError(
             "region to fetch must be at minimum 1×1 pixels".to_string(),
           ));
         }
 
-        let (dx, dy) = self.dimensions();
-        if corner.0 + size.0 >= dx {
+        let dim = self.dimensions();
+        if corner.x() + size.width() >= dim.width() {
           return Err(Error::UsageError(format!(
-            "image X dimension {dx} < requested {}",
-            corner.0 + size.0
+            "image X dimension {} < requested {}",
+            dim.width(),
+            corner.x() + size.width()
           )));
         }
-        if corner.1 + size.1 >= dy {
+        if corner.y() + size.height() >= dim.height() {
           return Err(Error::UsageError(format!(
-            "image Y dimension {dy} < requested {}",
-            corner.1 + size.1
+            "image Y dimension {} < requested {}",
+            dim.height(),
+            corner.y() + size.height()
           )));
         }
 
         let verified = VerifiedTileCount::new(
           self.dimensions(),
-          self.decoder.chunk_dimensions(),
+          Size::from(self.decoder.chunk_dimensions()),
           self.decoder.image().chunk_offsets.len(),
         )?;
 
@@ -968,82 +991,78 @@ mod public_api {
     impl CalculatedFetchRegion {
       /// Instantiates a new [`CalculatedFetchRegion`] for the provided image, tile and fetch
       /// configuration
-      fn new(t: &VerifiedTileCount, origin: (usize, usize), fetch_rect: (usize, usize)) -> Self {
+      fn new(t: &VerifiedTileCount, origin: Origin, fetch_rect: Size) -> Self {
         Self { img_dim: t.img_dim, tile_dim: t.tile_dim, origin, fetch_rect }
       }
 
       /// The width, in pixels, of the fetch rectangle
       fn rect_width(&self) -> usize {
-        self.fetch_rect.0
+        self.fetch_rect.width()
       }
 
       /// The height, in pixels, of the fetch rectangle
       fn rect_height(&self) -> usize {
-        self.fetch_rect.1
+        self.fetch_rect.height()
       }
 
       /// The lowest X coordinate of the fetch rectangle
       fn origin_x(&self) -> usize {
-        self.origin.0
+        self.origin.x()
       }
 
       /// The lowest Y coordinate of the fetch rectangle
       fn origin_y(&self) -> usize {
-        self.origin.1
+        self.origin.y()
       }
 
       /// The width of the image's tiles
       fn tile_width(&self) -> usize {
-        self.tile_dim.0
+        self.tile_dim.width()
       }
 
       /// The height of the image's tiles
       fn tile_height(&self) -> usize {
-        self.tile_dim.1
+        self.tile_dim.height()
       }
 
       /// The X index of the tile that contains the fetch region's origin pixel
       fn start_x_tile(&self) -> usize {
-        self.origin.0 / self.tile_dim.0
+        self.origin.x() / self.tile_dim.width()
       }
 
       /// The Y index of the tile that contains the fetch region's origin pixel
       fn start_y_tile(&self) -> usize {
-        self.origin.1 / self.tile_dim.1
+        self.origin.y() / self.tile_dim.height()
       }
 
       /// The X index of the tile that contains the fetch region's last pixel
       fn end_x_tile(&self) -> usize {
-        (self.origin.0 + self.fetch_rect.0) / self.tile_dim.0
+        (self.origin.x() + self.fetch_rect.width()) / self.tile_dim.width()
       }
 
       /// The Y index of the tile that contains the fetch region's last pixel
       fn end_y_tile(&self) -> usize {
-        (self.origin.1 + self.fetch_rect.1) / self.tile_dim.1
+        (self.origin.y() + self.fetch_rect.height()) / self.tile_dim.height()
       }
 
       /// The number of tiles, in the X dimension, that the fetch region covers
       fn x_tiles(&self) -> usize {
-        self.img_dim.0.div_ceil(self.tile_dim.0)
+        self.img_dim.width().div_ceil(self.tile_dim.width())
       }
 
       /// The number of tiles, in the Y dimension, that the fetch region covers
       fn y_tiles(&self) -> usize {
-        self.img_dim.1.div_ceil(self.tile_dim.1)
+        self.img_dim.height().div_ceil(self.tile_dim.height())
       }
     }
 
     impl VerifiedTileCount {
       /// Returns a new instance of [`VerifiedTileCount`], if the supplied numbers match up
-      fn new(
-        img_dim: (usize, usize), tile_dim: (usize, usize), actual_tile_count: usize,
-      ) -> Result<Self> {
-        let (img_width, img_height) = img_dim;
-        let (tile_width, tile_height) = tile_dim;
-
-        let expected_tiles = img_width
-          .div_ceil(tile_width)
-          .checked_mul(img_height.div_ceil(tile_height))
+      fn new(img_dim: Size, tile_dim: Size, actual_tile_count: usize) -> Result<Self> {
+        let expected_tiles = img_dim
+          .width()
+          .div_ceil(tile_dim.width())
+          .checked_mul(img_dim.height().div_ceil(tile_dim.height()))
           .expect("pixel count calculation cannot reasonably overflow");
         if expected_tiles != actual_tile_count {
           return Err(Error::Internal(
@@ -1090,11 +1109,12 @@ mod public_api {
     #[cfg(test)]
     mod tests {
       use crate::public_api::tiff::{CalculatedFetchRegion, VerifiedTileCount};
+      use crate::public_api::types::{Origin, Size};
 
       #[test]
       fn verified_tile_count() {
-        let img_dim = (8922, 5907);
-        let tile_dim = (256, 256);
+        let img_dim = Size::from((8922, 5907));
+        let tile_dim = Size::from((256, 256));
         let vtc = VerifiedTileCount::new(img_dim, tile_dim, 840).unwrap();
         assert_eq!(tile_dim, vtc.tile_dim);
         assert_eq!(img_dim, vtc.img_dim);
@@ -1102,10 +1122,10 @@ mod public_api {
 
       #[test]
       fn calculated_fetch_region() {
-        let img_dim = (8922, 5907);
-        let tile_dim = (256, 256);
+        let img_dim = Size::from((8922, 5907));
+        let tile_dim = Size::from((256, 256));
         let vtc = VerifiedTileCount { img_dim, tile_dim };
-        let cfr = CalculatedFetchRegion::new(&vtc, (128, 128), (256, 256));
+        let cfr = CalculatedFetchRegion::new(&vtc, Origin::from((128, 128)), Size::from((256, 256)));
 
         assert_eq!(0, cfr.start_x_tile());
         assert_eq!(0, cfr.start_y_tile());
@@ -1127,6 +1147,7 @@ mod public_api {
       public_api::decoded::{GetPixel, GetSample},
       TEST_IMAGE_DIR,
     };
+    use crate::public_api::types::Size;
 
     #[test]
     fn api_example() {
@@ -1152,16 +1173,16 @@ mod public_api {
       let mut tiff = Tiff::new(img_file).expect("image should be valid");
 
       let dimensions = tiff.dimensions();
-      assert_eq!((192, 256), dimensions);
+      assert_eq!(Size::from((192, 256)), dimensions);
 
       let mut rng = thread_rng();
       for _ in 0..10_000 {
-        let lo_x = rng.gen_range(0..dimensions.0 - 1);
-        let left_x = dimensions.0 - lo_x;
+        let lo_x = rng.gen_range(0..dimensions.width() - 1);
+        let left_x = dimensions.width() - lo_x;
         let sx = rng.gen_range(1..left_x);
 
-        let lo_y = rng.gen_range(0..dimensions.1 - 1);
-        let left_y = dimensions.1 - lo_y;
+        let lo_y = rng.gen_range(0..dimensions.height() - 1);
+        let left_y = dimensions.height() - lo_y;
         let sy = rng.gen_range(1..left_y);
 
         eprintln!("{lo_x}, {lo_y} .. {}, {}", lo_x + sx, lo_y + sy);
